@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090809" />
+
+  <title>WARP Generator</title>
+
+  <link rel="stylesheet" href="/src/styles.css" />
+
+  <script type="module" src="/src/main.ts" defer></script>
+</head>
+
+<body>
+  <div class="app">
+
+    <header class="topbar">
+
+      <div class="titlebar-drag" data-tauri-drag-region></div>
+
+      <div class="brand">
+        <div class="brand-mark">W</div>
+        <div class="brand-text">
+          <strong>WARP Generator</strong>
+          <span>Desktop</span>
+        </div>
+      </div>
+
+      <nav class="navigation">
+
+        <button class="nav-item active" data-page="generator" type="button">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h4l2-7 4 14 2-7h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>Генератор</span>
+        </button>
+
+        <button class="nav-item" data-page="history" type="button">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2" />
+              <path d="M12 8v4l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>История</span>
+        </button>
+
+        <button class="nav-item" data-page="settings" type="button">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V20h-2.6v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.6h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.6v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v2.6h-.1a1.7 1.7 0 0 0-1.6 1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span>Настройки</span>
+        </button>
+
+      </nav>
+
+      <div class="window-controls">
+
+        <button class="window-control minimize" id="window-minimize" type="button" aria-label="Свернуть">
+          <span></span>
+        </button>
+
+        <button class="window-control maximize" id="window-maximize" type="button" aria-label="Развернуть">
+          <span></span>
+        </button>
+
+        <button class="window-control close" id="window-close" type="button" aria-label="Закрыть">
+          <span></span>
+        </button>
+
+      </div>
+
+    </header>
+
+    <main class="content">
+
+      <section class="page active" data-page-content="generator">
+
+        <div class="page-heading">
+          <div>
+            <h1>Генератор</h1>
+            <p>Создайте конфигурацию WARP под свою задачу.</p>
+          </div>
+          <div class="status">
+            <span class="status-dot"></span>
+            <span>Готово</span>
+          </div>
+        </div>
+
+        <div class="workspace">
+
+          <div class="panel generator-panel">
+
+            <div class="panel-heading">
+              <div>
+                <h2>Настройки конфигурации</h2>
+                <p>Выберите параметры перед генерацией.</p>
+              </div>
+              <span class="panel-symbol">⌁</span>
+            </div>
+
+            <form id="generator-form">
+
+              <div class="fields-grid">
+
+                <div class="field custom-select-field">
+                  <span>Формат конфигурации</span>
+                  <div class="custom-select" data-select-id="config-format">
+                    <button class="custom-select-trigger" type="button" aria-expanded="false">
+                      <span class="custom-select-value">WireGuard</span>
+                      <span class="custom-select-arrow"></span>
+                    </button>
+                    <div class="custom-select-menu">
+                      <button type="button" class="custom-option selected" data-value="wireguard">WireGuard</button>
+                      <button type="button" class="custom-option" data-value="amneziawg">AmneziaWG</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="config-format" value="wireguard" />
+                </div>
+
+                <div class="field custom-select-field">
+                  <span>Настройки соединения</span>
+                  <div class="custom-select" data-select-id="connection">
+                    <button class="custom-select-trigger" type="button" aria-expanded="false">
+                      <span class="custom-select-value">AmneziaWG 1.5</span>
+                      <span class="custom-select-arrow"></span>
+                    </button>
+                    <div class="custom-select-menu">
+                      <button type="button" class="custom-option selected" data-value="amneziawg15">AmneziaWG 1.5</button>
+                      <button type="button" class="custom-option" data-value="amneziawg14">AmneziaWG 1.4</button>
+                      <button type="button" class="custom-option" data-value="wireguard">WireGuard</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="connection" value="amneziawg15" />
+                </div>
+
+                <div class="field custom-select-field">
+                  <span>DNS</span>
+                  <div class="custom-select" data-select-id="dns">
+                    <button class="custom-select-trigger" type="button" aria-expanded="false">
+                      <span class="custom-select-value">1.1.1.1</span>
+                      <span class="custom-select-arrow"></span>
+                    </button>
+                    <div class="custom-select-menu">
+                      <button type="button" class="custom-option selected" data-value="1.1.1.1">1.1.1.1</button>
+                      <button type="button" class="custom-option" data-value="8.8.8.8">8.8.8.8</button>
+                      <button type="button" class="custom-option" data-value="9.9.9.9">9.9.9.9</button>
+                      <button type="button" class="custom-option" data-value="dns.malw.link">dns.malw.link</button>
+                      <button type="button" class="custom-option" data-value="xbox-dns.ru">xbox-dns.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.geohide.ru">dns.geohide.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.comss.one">dns.comss.one</button>
+                      <button type="button" class="custom-option" data-value="dns.mafioznik.xyz">dns.mafioznik.xyz</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="dns" value="1.1.1.1" />
+                </div>
+
+                <div class="field custom-select-field">
+                  <span>Конечная точка</span>
+                  <div class="custom-select" data-select-id="endpoint">
+                    <button class="custom-select-trigger" type="button" aria-expanded="false">
+                      <span class="custom-select-value">По умолчанию</span>
+                      <span class="custom-select-arrow"></span>
+                    </button>
+                    <div class="custom-select-menu">
+                      <button type="button" class="custom-option selected" data-value="default">По умолчанию</button>
+                      <button type="button" class="custom-option" data-value="default2">Альтернативный</button>
+                      <button type="button" class="custom-option" data-value="fra1">FRA #1</button>
+                      <button type="button" class="custom-option" data-value="fra2">FRA #2</button>
+                      <button type="button" class="custom-option" data-value="random">Случайный</button>
+                      <button type="button" class="custom-option" data-value="custom">Свой адрес</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="endpoint" value="default" />
+                </div>
+
+              </div>
+
+              <div class="field full-field endpoint-custom-field" id="endpoint-custom-field" hidden>
+                <span>Пользовательская конечная точка</span>
+                <input
+                  type="text"
+                  id="endpoint-custom"
+                  placeholder="host:port (например 162.159.192.1:4500)"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+
+              <div class="switch-row">
+                <label class="switch">
+                  <input type="checkbox" id="exclude-lan" />
+                  <span class="switch-track">
+                    <span class="switch-thumb"></span>
+                  </span>
+                  <span>Исключить LAN</span>
+                </label>
+              </div>
+
+              <button type="button" class="advanced-toggle" id="advanced-toggle">
+                <span>Дополнительные настройки</span>
+                <span class="advanced-arrow"></span>
+              </button>
+
+              <div class="advanced-content" id="advanced-content">
+                <div class="advanced-inner">
+
+                  <div class="fields-grid">
+
+                    <div class="field custom-select-field">
+                      <span>IPv6</span>
+                      <div class="custom-select" data-select-id="ipv6">
+                        <button class="custom-select-trigger" type="button" aria-expanded="false">
+                          <span class="custom-select-value">Включён</span>
+                          <span class="custom-select-arrow"></span>
+                        </button>
+                        <div class="custom-select-menu">
+                          <button type="button" class="custom-option selected" data-value="enabled">Включён</button>
+                          <button type="button" class="custom-option" data-value="disabled">Выключен</button>
+                        </div>
+                      </div>
+                      <input type="hidden" id="ipv6" value="enabled" />
+                    </div>
+
+                    <div class="field custom-select-field">
+                      <span>MTU</span>
+                      <div class="custom-select" data-select-id="mtu">
+                        <button class="custom-select-trigger" type="button" aria-expanded="false">
+                          <span class="custom-select-value">1280</span>
+                          <span class="custom-select-arrow"></span>
+                        </button>
+                        <div class="custom-select-menu">
+                          <button type="button" class="custom-option selected" data-value="1280">1280</button>
+                          <button type="button" class="custom-option" data-value="1420">1420</button>
+                          <button type="button" class="custom-option" data-value="1380">1380</button>
+                          <button type="button" class="custom-option" data-value="1240">1240</button>
+                          <button type="button" class="custom-option" data-value="1200">1200</button>
+                        </div>
+                      </div>
+                      <input type="hidden" id="mtu" value="1280" />
+                    </div>
+
+                    <div class="field custom-select-field">
+                      <span>Persistent Keepalive</span>
+                      <div class="custom-select" data-select-id="keepalive">
+                        <button class="custom-select-trigger" type="button" aria-expanded="false">
+                          <span class="custom-select-value">25 секунд</span>
+                          <span class="custom-select-arrow"></span>
+                        </button>
+                        <div class="custom-select-menu">
+                          <button type="button" class="custom-option selected" data-value="25">25 секунд</button>
+                          <button type="button" class="custom-option" data-value="15">15 секунд</button>
+                          <button type="button" class="custom-option" data-value="0">Выключен</button>
+                        </div>
+                      </div>
+                      <input type="hidden" id="keepalive" value="25" />
+                    </div>
+
+                  </div>
+
+                                    <div class="field full-field endpoint-custom-field">
+                    <span>Кастомный I1 домен (только AmneziaWG 1.5)</span>
+                    <input
+                      type="text"
+                      id="custom-i1"
+                      placeholder="ozon.ru (пусто = случайная маска)"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <p class="field-error" id="custom-i1-error" hidden></p>
+                  </div>
+
+                </div>
+              </div>
+
+              <button type="submit" class="generate-button" id="generate-button">
+                <span class="generate-icon">✦</span>
+                <span>Сгенерировать конфигурацию</span>
+              </button>
+
+            </form>
+
+          </div>
+
+          <aside class="side-column">
+
+            <div class="panel project-panel">
+
+              <span class="eyebrow">ПРОЕКТ</span>
+
+              <a class="project-link" href="https://github.com/Thiefgg/warp-generator-desktop" target="_blank" rel="noreferrer">
+                <span class="project-icon">◉</span>
+                <span class="project-info">
+                  <strong>WARP Generator</strong>
+                  <small>Thiefgg</small>
+                </span>
+                <span class="project-badge" id="repo-stars">★ —</span>
+                <span class="project-arrow">›</span>
+              </a>
+
+            </div>
+
+            <div class="panel preview-panel">
+
+              <div class="preview-icon">✦</div>
+
+              <span class="eyebrow">ПРЕДПРОСМОТР</span>
+
+              <h3>Готово к генерации</h3>
+
+              <p>
+                После генерации здесь появится информация
+                о созданной конфигурации и действия с ней.
+              </p>
+
+              <div class="preview-divider"></div>
+
+              <div class="preview-row">
+                <span>Формат</span>
+                <strong id="preview-format">WireGuard</strong>
+              </div>
+
+              <div class="preview-row">
+                <span>DNS</span>
+                <strong id="preview-dns">1.1.1.1</strong>
+              </div>
+
+            </div>
+
+          </aside>
+
+        </div>
+
+      </section>
+
+      <section class="page" data-page-content="history">
+
+        <div class="page-heading">
+          <div>
+            <h1>История</h1>
+            <p>Ранее созданные конфигурации.</p>
+          </div>
+          <div class="status">
+            <span class="status-dot"></span>
+            <span>Локально</span>
+          </div>
+        </div>
+
+        <div class="panel history-panel">
+
+          <div class="panel-heading">
+            <div>
+              <h2>История генераций</h2>
+              <p>
+                Созданные конфигурации сохраняются
+                на этом компьютере.
+              </p>
+            </div>
+            <button class="clear-history" id="clear-history" type="button">
+              Очистить
+            </button>
+          </div>
+
+          <div class="history-list" id="history-list"></div>
+
+        </div>
+
+      </section>
+
+      <section class="page" data-page-content="settings">
+
+        <div class="page-heading">
+          <div>
+            <h1>Настройки</h1>
+            <p>Параметры приложения.</p>
+          </div>
+        </div>
+
+        <div class="panel settings-panel">
+
+          <div class="settings-group">
+            <span class="eyebrow">ПРИЛОЖЕНИЕ</span>
+            <div class="setting-item">
+              <div>
+                <h3>Автоматически сохранять историю</h3>
+                <p>Сохранять созданные конфигурации локально.</p>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="auto-history" checked />
+                <span class="switch-track">
+                  <span class="switch-thumb"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+    <footer class="footer">
+      <div class="footer-row">
+        <span>© 2026</span>
+        <span class="footer-sep">·</span>
+        <span>MIT License</span>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/Thiefgg">GitHub</a>
+      </div>
+      <div class="footer-row">
+        <span>WARP Generator</span>
+        <span class="footer-sep">·</span>
+        <span>modded by <a href="https://github.com/Thiefgg">Sakeenkok</a></span>
+        <span class="footer-sep">·</span>
+        <span>original project by <a href="https://github.com/nellimonix">llimonix</a></span>
+      </div>
+    </footer>
+
+  </div>
+
+  <div class="modal-overlay" id="result-modal" hidden>
+    <div class="modal">
+
+      <div class="modal-header">
+        <div class="modal-mark">W</div>
+        <div class="modal-title">
+          <h2>Конфигурация готова</h2>
+          <p id="modal-filename">WARP0000000.conf</p>
+        </div>
+        <button class="modal-close" id="modal-close" type="button" aria-label="Закрыть">
+          <span></span>
+        </button>
+      </div>
+
+      <div class="modal-actions">
+
+        <button class="modal-button primary" id="modal-open" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M15 3h6v6M21 3l-9 9M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Открыть в AmneziaWG</span>
+        </button>
+
+        <button class="modal-button secondary" id="modal-save" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M17 21v-8H7v8M7 3v5h8" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+          </svg>
+          <span>Сохранить как...</span>
+        </button>
+
+        <button class="modal-button secondary" id="modal-copy" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.8" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          <span>Скопировать</span>
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="guide-modal" hidden>
+    <div class="modal">
+
+      <div class="modal-header">
+        <div class="modal-mark success">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div class="modal-title">
+          <h2>Файл сохранён</h2>
+          <p id="guide-filename">WARP0000000.conf</p>
+        </div>
+        <button class="modal-close" id="guide-close" type="button" aria-label="Закрыть">
+          <span></span>
+        </button>
+      </div>
+
+      <div class="guide-steps">
+        <p>AmneziaWG уже открыта. Чтобы добавить туннель:</p>
+        <ol>
+          <li>В левом нижнем углу нажми <strong>«Add tunnel»</strong>.</li>
+          <li>Выбери пункт <strong>«Import from file»</strong>.</li>
+          <li>Укажи файл из открывшейся папки.</li>
+        </ol>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-button primary" id="guide-ok" type="button">
+          Понятно
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="confirm-modal" hidden>
+    <div class="modal">
+
+      <div class="modal-header">
+        <div class="modal-mark danger">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div class="modal-title">
+          <h2>Очистить историю?</h2>
+          <p>Все сохранённые конфигурации будут удалены</p>
+        </div>
+        <button class="modal-close" id="confirm-close" type="button" aria-label="Закрыть">
+          <span></span>
+        </button>
+      </div>
+
+      <div class="guide-steps">
+        <p>Это действие нельзя отменить. Файлы, которые уже лежат в <strong>Downloads\WARP Generator</strong>, останутся на месте — удалится только список внутри приложения.</p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="modal-button danger" id="confirm-yes" type="button">
+          Да, очистить
+        </button>
+        <button class="modal-button secondary" id="confirm-no" type="button">
+          Отмена
+        </button>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
