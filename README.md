@@ -30,20 +30,6 @@ After clicking "Open in AmneziaWG" — the config is saved and AmneziaWG opens w
 
 ![AmneziaWG import](.github/assets/screenshot-amnezia.png)
 
-## Features
-
-- WireGuard and AmneziaWG config generation
-- AmneziaWG 1.5 with custom I1 domain masking via QUIC handshake
-- 8 DNS providers, including ad-blocking and censorship-resistant ones
-- 6 endpoint presets plus custom address and random selection
-- IPv4/IPv6 support with optional LAN exclusion
-- Configurable MTU (1280, 1420, 1380, 1240, 1200) and Persistent Keepalive
-- One-click import into AmneziaWG
-- Local config history with confirmation dialog before clearing
-- Save As with native Windows dialog
-- Settings are auto-saved between sessions
-- Small footprint (~10 MB) — no bundled Chromium, uses system WebView2
-
 ## Installation
 
 Download the latest installer from [Releases](https://github.com/Thiefgg/warp-generator-desktop/releases).
