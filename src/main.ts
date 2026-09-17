@@ -4,36 +4,30 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { save } from "@tauri-apps/plugin-dialog";
 
-type PageName = "generator" | "history" | "settings";
+type PageName = "generator" | "ip" | "history" | "settings";
 
-interface HistoryItem {
-  id: string;
-  date: string;
-  format: string;
-  dns: string;
-  mode: string;
-  config: string;
-}
+interface HistoryItem { id: string; date: string; format: string; dns: string; mode: string; config: string; }
 
 interface GenerateOptions {
-  format: string;
-  connection: string;
-  dns: string;
-  endpoint: string;
-  excludeLan: boolean;
-  ipv6: string;
-  keepalive: number;
-  mtu: number;
-  customI1Domain: string | null;
+  format: string; connection: string; dns: string; endpoint: string;
+  excludeLan: boolean; ipv6: string; keepalive: number; mtu: number; customI1Domain: string | null;
 }
 
 interface SavedSettings {
-  autoHistory: boolean;
-  excludeLan: boolean;
-  endpointCustom: string;
-  customI1: string;
-  selects: Record<string, string>;
+  autoHistory: boolean; excludeLan: boolean; endpointCustom: string;
+  customI1: string; mtuCustom: string; selects: Record<string, string>;
 }
+
+type IpInfo = {
+  ip?: string;
+  type?: string;
+  country?: string;
+  city?: string;
+  connection?: { isp?: string; org?: string; asn?: number };
+  timezone?: { id?: string };
+  success?: boolean;
+  message?: string;
+};
 
 const ENDPOINTS: Record<string, string> = {
   default: "162.159.195.1:500",
@@ -43,23 +37,11 @@ const ENDPOINTS: Record<string, string> = {
 };
 
 const RANDOM_POOL: string[] = [
-  "162.159.192.1:4500",
-  "162.159.193.1:4500",
-  "162.159.195.1:4500",
-  "162.159.204.1:4500",
-  "188.114.96.125:4500",
-  "188.114.97.66:4500",
+  "162.159.192.1:4500", "162.159.193.1:4500", "162.159.195.1:4500",
+  "162.159.204.1:4500", "188.114.96.125:4500", "188.114.97.66:4500",
 ];
 
-const SELECT_IDS = [
-  "config-format",
-  "connection",
-  "dns",
-  "endpoint",
-  "ipv6",
-  "mtu",
-  "keepalive",
-];
+const SELECT_IDS = ["config-format", "connection", "dns", "endpoint", "ipv6", "mtu", "keepalive"];
 
 const appWindow = getCurrentWindow();
 
@@ -75,12 +57,14 @@ const clearHistory = document.querySelector<HTMLButtonElement>("#clear-history")
 const autoHistory = document.querySelector<HTMLInputElement>("#auto-history");
 const excludeLan = document.querySelector<HTMLInputElement>("#exclude-lan");
 const minimizeButton = document.querySelector<HTMLButtonElement>("#window-minimize");
-const maximizeButton = document.querySelector<HTMLButtonElement>("#window-maximize");
 const closeButton = document.querySelector<HTMLButtonElement>("#window-close");
 const endpointCustomField = document.querySelector<HTMLElement>("#endpoint-custom-field");
 const endpointCustomInput = document.querySelector<HTMLInputElement>("#endpoint-custom");
 const customI1Input = document.querySelector<HTMLInputElement>("#custom-i1");
 const customI1Error = document.querySelector<HTMLElement>("#custom-i1-error");
+const mtuCustomField = document.querySelector<HTMLElement>("#mtu-custom-field");
+const mtuCustomInput = document.querySelector<HTMLInputElement>("#mtu-custom");
+const mtuCustomError = document.querySelector<HTMLElement>("#mtu-custom-error");
 const resultModal = document.querySelector<HTMLElement>("#result-modal");
 const modalFilename = document.querySelector<HTMLElement>("#modal-filename");
 const modalClose = document.querySelector<HTMLButtonElement>("#modal-close");
@@ -95,14 +79,20 @@ const confirmModal = document.querySelector<HTMLElement>("#confirm-modal");
 const confirmClose = document.querySelector<HTMLButtonElement>("#confirm-close");
 const confirmYes = document.querySelector<HTMLButtonElement>("#confirm-yes");
 const confirmNo = document.querySelector<HTMLButtonElement>("#confirm-no");
+const errorModal = document.querySelector<HTMLElement>("#error-modal");
+const errorTitle = document.querySelector<HTMLElement>("#error-title");
+const errorSubtitle = document.querySelector<HTMLElement>("#error-subtitle");
+const errorMessage = document.querySelector<HTMLElement>("#error-message");
+const errorClose = document.querySelector<HTMLButtonElement>("#error-close");
+const errorOk = document.querySelector<HTMLButtonElement>("#error-ok");
 
 let appHistory: HistoryItem[] = loadHistory();
 let currentConfig = "";
 let currentFileName = "";
+let ipLoading = false;
 
 function getCustomValue(id: string): string {
-  const input = document.querySelector<HTMLInputElement>(`#${id}`);
-  return input?.value ?? "";
+  return document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? "";
 }
 
 function setCustomValue(id: string, value: string, label: string) {
@@ -111,42 +101,48 @@ function setCustomValue(id: string, value: string, label: string) {
   if (!input || !select) return;
 
   input.value = value;
+  const valueEl = select.querySelector<HTMLElement>(".custom-select-value");
+  if (valueEl) valueEl.textContent = label;
 
-  const valueElement = select.querySelector<HTMLElement>(".custom-select-value");
-  if (valueElement) valueElement.textContent = label;
-
-  select.querySelectorAll<HTMLButtonElement>(".custom-option").forEach((option) => {
-    option.classList.toggle("selected", option.dataset.value === value);
+  select.querySelectorAll<HTMLButtonElement>(".custom-option").forEach((opt) => {
+    opt.classList.toggle("selected", opt.dataset.value === value);
   });
 }
 
 function closeAllCustomSelects(except?: HTMLElement) {
-  document.querySelectorAll<HTMLElement>(".custom-select.open").forEach((select) => {
-    if (select !== except) closeCustomSelect(select);
+  document.querySelectorAll<HTMLElement>(".custom-select.open").forEach((s) => {
+    if (s !== except) closeCustomSelect(s);
   });
 }
 
 function openCustomSelect(select: HTMLElement) {
   closeAllCustomSelects(select);
   select.classList.add("open");
-  const trigger = select.querySelector<HTMLButtonElement>(".custom-select-trigger");
-  trigger?.setAttribute("aria-expanded", "true");
+  select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "true");
 }
 
 function closeCustomSelect(select: HTMLElement) {
   select.classList.remove("open");
-  const trigger = select.querySelector<HTMLButtonElement>(".custom-select-trigger");
-  trigger?.setAttribute("aria-expanded", "false");
+  select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "false");
 }
 
 function updateEndpointVisibility() {
   if (!endpointCustomField) return;
-  const mode = getCustomValue("endpoint");
-  if (mode === "custom") {
-    endpointCustomField.removeAttribute("hidden");
-  } else {
-    endpointCustomField.setAttribute("hidden", "true");
-  }
+  endpointCustomField.toggleAttribute("hidden", getCustomValue("endpoint") !== "custom");
+}
+
+function updateMtuVisibility() {
+  if (!mtuCustomField) return;
+  mtuCustomField.toggleAttribute("hidden", getCustomValue("mtu") !== "custom");
+}
+
+function validateMtu(raw: string): string | null {
+  if (raw.trim().length === 0) return "Введи значение";
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return "Должно быть число";
+  if (n < 576) return "Минимум 576";
+  if (n > 1500) return "Максимум 1500";
+  return null;
 }
 
 function initCustomSelects() {
@@ -159,8 +155,7 @@ function initCustomSelects() {
 
     trigger?.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (select.classList.contains("open")) closeCustomSelect(select);
-      else openCustomSelect(select);
+      select.classList.contains("open") ? closeCustomSelect(select) : openCustomSelect(select);
     });
 
     options.forEach((option) => {
@@ -175,6 +170,7 @@ function initCustomSelects() {
         saveSettings();
 
         if (id === "endpoint") updateEndpointVisibility();
+        if (id === "mtu") updateMtuVisibility();
       });
     });
   });
@@ -185,14 +181,10 @@ function switchPage(pageName: PageName) {
   hideResultModal();
   hideGuideModal();
   hideConfirmModal();
+  hideErrorModal();
 
-  navItems.forEach((item) => {
-    item.classList.toggle("active", item.dataset.page === pageName);
-  });
-
-  pages.forEach((page) => {
-    page.classList.toggle("active", page.dataset.pageContent === pageName);
-  });
+  navItems.forEach((item) => item.classList.toggle("active", item.dataset.page === pageName));
+  pages.forEach((page) => page.classList.toggle("active", page.dataset.pageContent === pageName));
 }
 
 function updatePreview() {
@@ -214,13 +206,23 @@ function resolveEndpoint(): string {
 
   if (mode === "custom") {
     const value = endpointCustomInput?.value.trim() ?? "";
-    if (value.length > 0) return value;
-    return ENDPOINTS.default;
+    return value.length > 0 ? value : ENDPOINTS.default;
   }
 
   if (mode === "random") return RANDOM_POOL[Math.floor(Math.random() * RANDOM_POOL.length)];
-
   return ENDPOINTS[mode] ?? ENDPOINTS.default;
+}
+
+function resolveMtu(): number {
+  const mode = getCustomValue("mtu");
+
+  if (mode === "custom") {
+    const raw = parseInt(mtuCustomInput?.value ?? "", 10);
+    return Number.isFinite(raw) && raw >= 576 && raw <= 1500 ? raw : 1280;
+  }
+
+  const raw = parseInt(mode, 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1280;
 }
 
 function validateI1Domain(raw: string): string | null {
@@ -228,17 +230,13 @@ function validateI1Domain(raw: string): string | null {
   if (s.length === 0) return null;
   if (s.length > 253) return "Домен длиннее 253 символов";
   if (!s.includes(".")) return "Домен должен содержать точку (например ozon.ru)";
-  if (s.startsWith(".") || s.endsWith(".") || s.includes(".."))
-    return "Некорректное расположение точек";
+  if (s.startsWith(".") || s.endsWith(".") || s.includes("..")) return "Некорректное расположение точек";
 
-  const labels = s.split(".");
-  for (const label of labels) {
+  for (const label of s.split(".")) {
     if (label.length === 0) return "Пустая метка домена";
     if (label.length > 63) return "Метка домена длиннее 63 символов";
-    if (label.startsWith("-") || label.endsWith("-"))
-      return "Метка не может начинаться или заканчиваться дефисом";
-    if (!/^[a-z0-9-]+$/.test(label))
-      return "Только латиница в нижнем регистре, цифры и дефис";
+    if (label.startsWith("-") || label.endsWith("-")) return "Метка не может начинаться или заканчиваться дефисом";
+    if (!/^[a-z0-9-]+$/.test(label)) return "Только латиница в нижнем регистре, цифры и дефис";
   }
 
   return null;
@@ -247,11 +245,7 @@ function validateI1Domain(raw: string): string | null {
 function buildOptions(): GenerateOptions {
   const keepaliveRaw = parseInt(getCustomValue("keepalive"), 10);
   const keepalive = Number.isFinite(keepaliveRaw) ? keepaliveRaw : 0;
-
-  const mtuRaw = parseInt(getCustomValue("mtu"), 10);
-  const mtu = Number.isFinite(mtuRaw) && mtuRaw > 0 ? mtuRaw : 1280;
-
-  const customI1Raw = customI1Input?.value.trim() ?? "";
+  const customI1Raw = (customI1Input?.value ?? "").trim().toLowerCase();
 
   return {
     format: getCustomValue("config-format") || "wireguard",
@@ -261,23 +255,21 @@ function buildOptions(): GenerateOptions {
     excludeLan: excludeLan?.checked ?? false,
     ipv6: getCustomValue("ipv6") || "enabled",
     keepalive,
-    mtu,
+    mtu: resolveMtu(),
     customI1Domain: customI1Raw.length > 0 ? customI1Raw : null,
   };
 }
 
 function generateFileName(format: string): string {
   const id = Math.floor(Math.random() * 9_000_000) + 1_000_000;
-  const prefix = format === "amneziawg" ? "AMNEZIA" : "WARP";
-  return `${prefix}${id}.conf`;
+  return `${format === "amneziawg" ? "AMNEZIA" : "WARP"}${id}.conf`;
 }
 
 function createHistoryItem(config: string): HistoryItem {
-  const format = getCustomValue("config-format") === "amneziawg" ? "AmneziaWG" : "WireGuard";
   return {
     id: crypto.randomUUID(),
     date: new Date().toLocaleString("ru-RU"),
-    format,
+    format: getCustomValue("config-format") === "amneziawg" ? "AmneziaWG" : "WireGuard",
     dns: getCustomValue("dns") || "1.1.1.1",
     mode: "Все сайты",
     config,
@@ -290,9 +282,7 @@ function loadHistory(): HistoryItem[] {
     if (!stored) return [];
     const parsed: unknown = JSON.parse(stored);
     return Array.isArray(parsed) ? (parsed as HistoryItem[]) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function saveHistory() {
@@ -302,24 +292,20 @@ function saveHistory() {
 function loadSettings(): SavedSettings | null {
   try {
     const stored = localStorage.getItem("warp-generator-settings");
-    if (!stored) return null;
-    return JSON.parse(stored) as SavedSettings;
-  } catch {
-    return null;
-  }
+    return stored ? JSON.parse(stored) as SavedSettings : null;
+  } catch { return null; }
 }
 
 function saveSettings() {
   const selects: Record<string, string> = {};
-  SELECT_IDS.forEach((id) => {
-    selects[id] = getCustomValue(id);
-  });
+  SELECT_IDS.forEach((id) => { selects[id] = getCustomValue(id); });
 
   const data: SavedSettings = {
     autoHistory: autoHistory?.checked ?? true,
     excludeLan: excludeLan?.checked ?? false,
     endpointCustom: endpointCustomInput?.value ?? "",
     customI1: customI1Input?.value ?? "",
+    mtuCustom: mtuCustomInput?.value ?? "",
     selects,
   };
 
@@ -337,25 +323,14 @@ function applySettings() {
     const option = document.querySelector<HTMLButtonElement>(
       `.custom-select[data-select-id="${id}"] .custom-option[data-value="${value}"]`,
     );
-
     setCustomValue(id, value, option?.textContent?.trim() ?? value);
   });
 
-  if (typeof saved.autoHistory === "boolean" && autoHistory) {
-    autoHistory.checked = saved.autoHistory;
-  }
-
-  if (typeof saved.excludeLan === "boolean" && excludeLan) {
-    excludeLan.checked = saved.excludeLan;
-  }
-
-  if (saved.endpointCustom && endpointCustomInput) {
-    endpointCustomInput.value = saved.endpointCustom;
-  }
-
-  if (saved.customI1 && customI1Input) {
-    customI1Input.value = saved.customI1;
-  }
+  if (typeof saved.autoHistory === "boolean" && autoHistory) autoHistory.checked = saved.autoHistory;
+  if (typeof saved.excludeLan === "boolean" && excludeLan) excludeLan.checked = saved.excludeLan;
+  if (saved.endpointCustom && endpointCustomInput) endpointCustomInput.value = saved.endpointCustom;
+  if (saved.customI1 && customI1Input) customI1Input.value = saved.customI1;
+  if (saved.mtuCustom && mtuCustomInput) mtuCustomInput.value = saved.mtuCustom;
 }
 
 function renderHistory() {
@@ -366,40 +341,30 @@ function renderHistory() {
       <div class="empty-history">
         <div class="empty-icon">◷</div>
         <h3>История пока пуста</h3>
-        <p>
-          После первой генерации здесь появятся
-          сохранённые конфигурации.
-        </p>
-        <button class="secondary-button" id="go-generator" type="button">
-          Перейти к генератору
-        </button>
+        <p>После первой генерации здесь появятся сохранённые конфигурации.</p>
+        <button class="secondary-button" id="go-generator" type="button">Перейти к генератору</button>
       </div>
     `;
 
     document.querySelector<HTMLButtonElement>("#go-generator")
       ?.addEventListener("click", () => switchPage("generator"));
-
     return;
   }
 
-  historyList.innerHTML = appHistory
-    .map(
-      (item) => `
-        <article class="history-item" data-history-id="${item.id}">
-          <div class="history-item-icon">W</div>
-          <div class="history-item-main">
-            <strong>${item.format}</strong>
-            <span>${item.mode}</span>
-          </div>
-          <div class="history-item-meta">
-            <span>${item.dns}</span>
-            <small>${item.date}</small>
-          </div>
-          <button class="history-delete" data-history-id="${item.id}" type="button">×</button>
-        </article>
-      `,
-    )
-    .join("");
+  historyList.innerHTML = appHistory.map((item) => `
+    <article class="history-item" data-history-id="${item.id}">
+      <div class="history-item-icon">W</div>
+      <div class="history-item-main">
+        <strong>${item.format}</strong>
+        <span>${item.mode}</span>
+      </div>
+      <div class="history-item-meta">
+        <span>${item.dns}</span>
+        <small>${item.date}</small>
+      </div>
+      <button class="history-delete" data-history-id="${item.id}" type="button">×</button>
+    </article>
+  `).join("");
 
   historyList.querySelectorAll<HTMLElement>(".history-item").forEach((el) => {
     el.addEventListener("click", (event) => {
@@ -434,39 +399,108 @@ function showResultModal(config: string, fileName: string) {
   resultModal?.removeAttribute("hidden");
 }
 
-function hideResultModal() {
-  resultModal?.setAttribute("hidden", "true");
-}
+function hideResultModal() { resultModal?.setAttribute("hidden", "true"); }
 
 function showGuideModal(fileName: string) {
   if (guideFilename) guideFilename.textContent = fileName;
   guideModal?.removeAttribute("hidden");
 }
 
-function hideGuideModal() {
-  guideModal?.setAttribute("hidden", "true");
+function hideGuideModal() { guideModal?.setAttribute("hidden", "true"); }
+
+function showConfirmModal() { confirmModal?.removeAttribute("hidden"); }
+
+function hideConfirmModal() { confirmModal?.setAttribute("hidden", "true"); }
+
+function showErrorModal(title: string, subtitle: string, message: string) {
+  if (errorTitle) errorTitle.textContent = title;
+  if (errorSubtitle) errorSubtitle.textContent = subtitle;
+  if (errorMessage) errorMessage.textContent = message;
+  errorModal?.removeAttribute("hidden");
 }
 
-function showConfirmModal() {
-  confirmModal?.removeAttribute("hidden");
+function hideErrorModal() { errorModal?.setAttribute("hidden", "true"); }
+
+function classifyError(raw: string): { title: string; subtitle: string; message: string } {
+  const lower = raw.toLowerCase();
+
+  if (lower.includes("network") || lower.includes("error sending request") || lower.includes("dns") || lower.includes("connect")) {
+    return {
+      title: "Нет соединения",
+      subtitle: "Не удалось связаться с Cloudflare",
+      message: "Проверь подключение к интернету и попробуй снова. Если используешь VPN или прокси — попробуй временно отключить.",
+    };
+  }
+
+  if (lower.includes("timeout") || lower.includes("timed out")) {
+    return {
+      title: "Превышено время ожидания",
+      subtitle: "Cloudflare не отвечает",
+      message: "Сервер не ответил вовремя. Попробуй ещё раз через несколько секунд. Если проблема повторяется — смени DNS или endpoint.",
+    };
+  }
+
+  if (lower.includes("http 4") || lower.includes("http 5")) {
+    return {
+      title: "Ошибка Cloudflare",
+      subtitle: "Сервер отклонил запрос",
+      message: `Cloudflare вернул ошибку: ${raw}. Обычно это проходит само через минуту. Попробуй снова позже.`,
+    };
+  }
+
+  if (lower.includes("invalid domain") || lower.includes("домен") || lower.includes("invalid")) {
+    return {
+      title: "Некорректный ввод",
+      subtitle: "Проверь параметры",
+      message: raw,
+    };
+  }
+
+  return {
+    title: "Ошибка генерации",
+    subtitle: "Что-то пошло не так",
+    message: raw,
+  };
 }
 
-function hideConfirmModal() {
-  confirmModal?.setAttribute("hidden", "true");
+function setStatus(state: "ready" | "loading" | "error", text?: string) {
+  const statusEl = document.querySelector<HTMLElement>("#status");
+  if (!statusEl) return;
+
+  statusEl.dataset.state = state;
+
+  const textEl = statusEl.querySelector<HTMLElement>(".status-text");
+  if (!textEl) return;
+
+  if (text !== undefined) { textEl.textContent = text; return; }
+
+  if (state === "loading") textEl.textContent = "Генерация...";
+  else if (state === "error") textEl.textContent = "Ошибка";
+  else textEl.textContent = "Готово";
 }
 
 async function generateConfiguration() {
   const button = document.querySelector<HTMLButtonElement>("#generate-button");
   if (!button) return;
 
+  if (getCustomValue("mtu") === "custom") {
+    const err = validateMtu(mtuCustomInput?.value ?? "");
+    if (err) {
+      if (mtuCustomError) { mtuCustomError.textContent = err; mtuCustomError.removeAttribute("hidden"); }
+      mtuCustomInput?.classList.add("invalid");
+      advancedContent?.classList.add("open");
+      advancedToggle?.classList.add("open");
+      return;
+    }
+    if (mtuCustomError) mtuCustomError.setAttribute("hidden", "true");
+    mtuCustomInput?.classList.remove("invalid");
+  }
+
   const i1Raw = customI1Input?.value.trim() ?? "";
   const i1Error = validateI1Domain(i1Raw);
 
   if (i1Error) {
-    if (customI1Error) {
-      customI1Error.textContent = i1Error;
-      customI1Error.removeAttribute("hidden");
-    }
+    if (customI1Error) { customI1Error.textContent = i1Error; customI1Error.removeAttribute("hidden"); }
     customI1Input?.classList.add("invalid");
     advancedContent?.classList.add("open");
     advancedToggle?.classList.add("open");
@@ -478,11 +512,8 @@ async function generateConfiguration() {
 
   button.disabled = true;
   const originalContent = button.innerHTML;
-
-  button.innerHTML = `
-    <span class="loading-spinner"></span>
-    <span>Генерация...</span>
-  `;
+  button.innerHTML = `<span class="loading-spinner"></span><span>Генерация...</span>`;
+  setStatus("loading");
 
   try {
     const options = buildOptions();
@@ -496,19 +527,88 @@ async function generateConfiguration() {
       renderHistory();
     }
 
+    setStatus("ready");
     showResultModal(config, fileName);
   } catch (err) {
-    const message =
-      typeof err === "string"
-        ? err
-        : err instanceof Error
-          ? err.message
-          : "Неизвестная ошибка";
+    const raw = typeof err === "string" ? err : err instanceof Error ? err.message : "Неизвестная ошибка";
+    const info = classifyError(raw);
 
-    alert(`Ошибка генерации: ${message}`);
+    setStatus("error");
+    showErrorModal(info.title, info.subtitle, info.message);
+
+    setTimeout(() => {
+      if (document.querySelector<HTMLElement>("#status")?.dataset.state === "error") {
+        setStatus("ready");
+      }
+    }, 5000);
   } finally {
     button.disabled = false;
     button.innerHTML = originalContent;
+  }
+}
+
+async function loadIpInfo() {
+  if (ipLoading) return;
+  ipLoading = true;
+
+  const statusEl = document.querySelector<HTMLElement>("#ip-status");
+  const addressEl = document.querySelector<HTMLElement>("#ip-address");
+  const metaEl = document.querySelector<HTMLElement>("#ip-meta");
+  const countryEl = document.querySelector<HTMLElement>("#ip-country");
+  const cityEl = document.querySelector<HTMLElement>("#ip-city");
+  const ispEl = document.querySelector<HTMLElement>("#ip-isp");
+  const asnEl = document.querySelector<HTMLElement>("#ip-asn");
+  const tzEl = document.querySelector<HTMLElement>("#ip-tz");
+  const typeEl = document.querySelector<HTMLElement>("#ip-type");
+  const refreshBtn = document.querySelector<HTMLButtonElement>("#ip-refresh");
+
+  if (statusEl) {
+    statusEl.dataset.state = "loading";
+    const t = statusEl.querySelector<HTMLElement>(".status-text");
+    if (t) t.textContent = "Проверка...";
+  }
+  if (refreshBtn) refreshBtn.disabled = true;
+
+  try {
+    const json = await invoke<string>("fetch_ip_info");
+    const data = JSON.parse(json) as IpInfo;
+
+    if (!data.success || !data.ip) throw new Error(data.message || "invalid response");
+
+    if (addressEl) addressEl.textContent = data.ip;
+    if (metaEl) metaEl.textContent = [data.country, data.city, data.connection?.isp].filter(Boolean).join(" · ");
+    if (countryEl) countryEl.textContent = data.country || "—";
+    if (cityEl) cityEl.textContent = data.city || "—";
+    if (ispEl) ispEl.textContent = data.connection?.isp || data.connection?.org || "—";
+    if (asnEl) asnEl.textContent = data.connection?.asn ? `AS${data.connection.asn}` : "—";
+    if (tzEl) tzEl.textContent = data.timezone?.id || "—";
+    if (typeEl) typeEl.textContent = data.type || "—";
+
+        if (statusEl) {
+      statusEl.dataset.state = "ok";
+      const t = statusEl.querySelector<HTMLElement>(".status-text");
+      if (t) t.textContent = "Готово";
+    }
+  } catch (err) {
+    const raw = typeof err === "string" ? err : err instanceof Error ? err.message : "unknown error";
+
+    if (addressEl) addressEl.textContent = "—";
+    if (metaEl) metaEl.textContent = raw;
+    if (countryEl) countryEl.textContent = "—";
+    if (cityEl) cityEl.textContent = "—";
+    if (ispEl) ispEl.textContent = "—";
+    if (asnEl) asnEl.textContent = "—";
+    if (tzEl) tzEl.textContent = "—";
+    if (typeEl) typeEl.textContent = "—";
+
+        if (statusEl) {
+      statusEl.dataset.state = "error";
+      const t = statusEl.querySelector<HTMLElement>(".status-text");
+      if (t) t.textContent = "Ошибка";
+    }
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+    ipLoading = false;
   }
 }
 
@@ -519,17 +619,13 @@ async function loadRepoStars() {
   try {
     const response = await tauriFetch(
       "https://api.github.com/repos/Thiefgg/warp-generator-desktop",
-      {
-        method: "GET",
-        headers: { Accept: "application/vnd.github+json" },
-      },
+      { method: "GET", headers: { Accept: "application/vnd.github+json" } },
     );
 
     if (!response.ok) return;
 
     const data = (await response.json()) as { stargazers_count?: number };
-    const stars = data.stargazers_count ?? 0;
-    badge.textContent = `★ ${stars}`;
+    badge.textContent = `★ ${data.stargazers_count ?? 0}`;
   } catch {
     badge.textContent = "★ —";
   }
@@ -539,6 +635,7 @@ navItems.forEach((item) => {
   item.addEventListener("click", () => {
     const page = item.dataset.page as PageName | undefined;
     if (page) switchPage(page);
+    if (page === "ip") void loadIpInfo();
   });
 });
 
@@ -555,12 +652,16 @@ excludeLan?.addEventListener("change", saveSettings);
 endpointCustomInput?.addEventListener("input", saveSettings);
 
 customI1Input?.addEventListener("input", () => {
+  if (customI1Input) {
+    const lowered = customI1Input.value.toLowerCase();
+    if (customI1Input.value !== lowered) customI1Input.value = lowered;
+  }
+
   saveSettings();
 
   if (!customI1Error || !customI1Input) return;
 
-  const raw = customI1Input.value.trim();
-  const err = validateI1Domain(raw);
+  const err = validateI1Domain(customI1Input.value.trim());
 
   if (err) {
     customI1Error.textContent = err;
@@ -570,6 +671,28 @@ customI1Input?.addEventListener("input", () => {
     customI1Error.setAttribute("hidden", "true");
     customI1Input.classList.remove("invalid");
   }
+});
+
+mtuCustomInput?.addEventListener("input", () => {
+  saveSettings();
+
+  if (!mtuCustomError || !mtuCustomInput) return;
+
+  const raw = mtuCustomInput.value;
+  const err = validateMtu(raw);
+
+  if (err && raw.length > 0) {
+    mtuCustomError.textContent = err;
+    mtuCustomError.removeAttribute("hidden");
+    mtuCustomInput.classList.add("invalid");
+  } else {
+    mtuCustomError.setAttribute("hidden", "true");
+    mtuCustomInput.classList.remove("invalid");
+  }
+});
+
+document.querySelector<HTMLButtonElement>("#ip-refresh")?.addEventListener("click", () => {
+  void loadIpInfo();
 });
 
 clearHistory?.addEventListener("click", () => {
@@ -599,22 +722,36 @@ guideModal?.addEventListener("click", (event) => {
   if (event.target === guideModal) hideGuideModal();
 });
 
+errorModal?.addEventListener("click", (event) => {
+  if (event.target === errorModal) {
+    hideErrorModal();
+    setStatus("ready");
+  }
+});
+
 modalClose?.addEventListener("click", hideResultModal);
 guideClose?.addEventListener("click", hideGuideModal);
 guideOk?.addEventListener("click", hideGuideModal);
 
+errorClose?.addEventListener("click", () => {
+  hideErrorModal();
+  setStatus("ready");
+});
+
+errorOk?.addEventListener("click", () => {
+  hideErrorModal();
+  setStatus("ready");
+});
+
 modalOpen?.addEventListener("click", async () => {
   if (!currentConfig || !currentFileName) return;
   try {
-    await invoke("open_in_amnezia", {
-      content: currentConfig,
-      filename: currentFileName,
-    });
-
+    await invoke("open_in_amnezia", { content: currentConfig, filename: currentFileName });
     hideResultModal();
     showGuideModal(currentFileName);
   } catch (err) {
-    alert(`Не удалось открыть: ${err}`);
+    const raw = typeof err === "string" ? err : "Неизвестная ошибка";
+    showErrorModal("Не удалось открыть", "AmneziaWG недоступна", raw);
   }
 });
 
@@ -631,13 +768,10 @@ modalSave?.addEventListener("click", async () => {
     });
 
     if (!path) return;
-
-    await invoke<string>("save_to_path", {
-      path,
-      content: currentConfig,
-    });
+    await invoke<string>("save_to_path", { path, content: currentConfig });
   } catch (err) {
-    alert(`Не удалось сохранить: ${err}`);
+    const raw = typeof err === "string" ? err : "Неизвестная ошибка";
+    showErrorModal("Не удалось сохранить", "Ошибка файловой системы", raw);
   }
 });
 
@@ -649,21 +783,19 @@ modalCopy?.addEventListener("click", async () => {
     if (!label) return;
     const original = label.textContent;
     label.textContent = "Скопировано";
-    setTimeout(() => {
-      label.textContent = original;
-    }, 1500);
+    setTimeout(() => { label.textContent = original; }, 1500);
   } catch {}
 });
 
-document.addEventListener("click", () => {
-  closeAllCustomSelects();
-});
+document.addEventListener("click", () => closeAllCustomSelects());
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     hideResultModal();
     hideGuideModal();
     hideConfirmModal();
+    hideErrorModal();
+    setStatus("ready");
   }
 });
 
@@ -672,43 +804,17 @@ minimizeButton?.addEventListener("click", async (event) => {
   await appWindow.minimize();
 });
 
-maximizeButton?.addEventListener("click", async (event) => {
-  event.stopPropagation();
-  await appWindow.toggleMaximize();
-  const maximized = await appWindow.isMaximized();
-  maximizeButton.classList.toggle("is-maximized", maximized);
-});
-
 closeButton?.addEventListener("click", async (event) => {
   event.stopPropagation();
   await appWindow.close();
 });
 
-appWindow.onResized(async () => {
-  if (!maximizeButton) return;
-  const maximized = await appWindow.isMaximized();
-  maximizeButton.classList.toggle("is-maximized", maximized);
-});
-
-document.querySelectorAll<HTMLAnchorElement>(".footer a").forEach((link) => {
+document.querySelectorAll<HTMLAnchorElement>(".footer a, .project-link").forEach((link) => {
   link.addEventListener("click", async (event) => {
     event.preventDefault();
     const url = link.getAttribute("href");
     if (!url) return;
-    try {
-      await openUrl(url);
-    } catch {}
-  });
-});
-
-document.querySelectorAll<HTMLAnchorElement>(".project-link").forEach((link) => {
-  link.addEventListener("click", async (event) => {
-    event.preventDefault();
-    const url = link.getAttribute("href");
-    if (!url) return;
-    try {
-      await openUrl(url);
-    } catch {}
+    try { await openUrl(url); } catch {}
   });
 });
 
@@ -717,4 +823,5 @@ applySettings();
 renderHistory();
 updatePreview();
 updateEndpointVisibility();
+updateMtuVisibility();
 void loadRepoStars();
