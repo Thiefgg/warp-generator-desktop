@@ -27,18 +27,18 @@
 
 * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
 
-html, body { margin: 0; min-width: 100%; height: 100%; overflow: hidden; }
-
-body {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 50% -20%, rgba(110, 48, 68, 0.13), transparent 42%),
-    radial-gradient(circle at 100% 50%, rgba(83, 38, 55, 0.08), transparent 35%),
-    var(--background);
-  color: var(--text);
+html, body {
+  margin: 0;
+  min-width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 
+body {
+  min-height: 100vh;
+  color: var(--text);
+  overflow: hidden;
+}
 input, textarea { user-select: text; -webkit-user-select: text; }
 
 button { font: inherit; border: 0; outline: none; }
@@ -47,14 +47,18 @@ button, a { -webkit-user-drag: none; }
 a { color: inherit; text-decoration: none; }
 
 .app {
-  width: min(1180px, calc(100% - 48px));
+  width: 100%;
   height: 100vh;
-  margin: 0 auto;
-  padding: 20px 0 18px;
+  margin: 0;
+  padding: 20px 24px 18px;
   display: flex;
   flex-direction: column;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(110, 48, 68, 0.13), transparent 42%),
+    radial-gradient(circle at 100% 50%, rgba(83, 38, 55, 0.08), transparent 35%),
+    var(--background);
+  overflow: hidden;
 }
-
 .topbar {
   position: relative;
   min-height: 58px;
@@ -932,3 +936,30 @@ a { color: inherit; text-decoration: none; }
   .side-column { display: flex; }
   .generator-panel, .history-panel, .settings-panel { padding: 17px; }
 }
+
+.status[data-state="loading"] .status-dot { background: #f0a83c; box-shadow: 0 0 10px rgba(240, 168, 60, 0.55); animation: status-pulse 800ms ease-in-out infinite; }
+.status[data-state="loading"] .status-text { color: #f0a83c; }
+.status[data-state="error"] .status-dot { background: #d57690; box-shadow: 0 0 10px rgba(213, 118, 144, 0.55); animation: none; }
+.status[data-state="error"] .status-text { color: #d57690; }
+.status[data-state="ready"] .status-dot { background: var(--success); box-shadow: 0 0 10px rgba(113, 201, 154, 0.55); animation: status-pulse 2.6s ease-in-out infinite; }
+.ip-panel { padding: 24px; display: flex; flex-direction: column; gap: 22px; }
+.ip-main { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.ip-main .eyebrow { margin: 0; }
+.ip-address { font-size: 32px; font-weight: 700; letter-spacing: -1px; color: var(--text); font-family: "Consolas", "Monaco", monospace; user-select: text; -webkit-user-select: text; }
+.ip-meta { color: var(--text-muted); font-size: 12px; }
+.ip-refresh { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px 16px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 9px; color: var(--text-soft); font-size: 12px; font-weight: 600; cursor: pointer; transition: color 180ms ease, background 180ms ease, transform 180ms ease; }
+.ip-refresh:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+.ip-refresh:active { transform: translateY(1px) scale(0.995); }
+.ip-refresh:disabled { cursor: default; opacity: 0.6; }
+.ip-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ip-detail-card { padding: 14px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: 11px; display: flex; flex-direction: column; gap: 5px; }
+.ip-detail-label { color: var(--text-muted); font-size: 10px; }
+.ip-detail-value { color: var(--text); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ip-status[data-state="idle"] .status-dot { background: var(--text-muted); box-shadow: none; animation: none; }
+#ip-status[data-state="idle"] .status-text { color: var(--text-muted); }
+#ip-status[data-state="loading"] .status-dot { background: #f0a83c; box-shadow: 0 0 10px rgba(240, 168, 60, 0.55); animation: status-pulse 800ms ease-in-out infinite; }
+#ip-status[data-state="loading"] .status-text { color: #f0a83c; }
+#ip-status[data-state="ok"] .status-dot { background: var(--success); box-shadow: 0 0 10px rgba(113, 201, 154, 0.55); animation: none; }
+#ip-status[data-state="ok"] .status-text { color: var(--success); }
+#ip-status[data-state="error"] .status-dot { background: #d57690; box-shadow: 0 0 10px rgba(213, 118, 144, 0.55); animation: none; }
+#ip-status[data-state="error"] .status-text { color: #d57690; }

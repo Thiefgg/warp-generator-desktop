@@ -231,7 +231,10 @@ fn validate_domain(s: &str) -> Result<(), String> {
             return Err("метка не может начинаться или заканчиваться дефисом".into());
         }
         for ch in label.chars() {
-            let ok = ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-';
+            let ok = ch.is_ascii_lowercase()
+                || ch.is_ascii_uppercase()
+                || ch.is_ascii_digit()
+                || ch == '-';
             if !ok {
                 return Err(format!(
                     "недопустимый символ '{}'. Только латиница, цифры и дефис",
@@ -245,7 +248,8 @@ fn validate_domain(s: &str) -> Result<(), String> {
 }
 
 pub fn generate_i1(domain: &str) -> Result<String, String> {
-    let sni = domain.trim();
+    let lowered = domain.trim().to_lowercase();
+    let sni = lowered.as_str();
     validate_domain(sni)?;
 
     let mut dcid = [0u8; 1];

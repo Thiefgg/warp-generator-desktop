@@ -334,6 +334,23 @@ async fn save_to_path(path: String, content: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn fetch_ip_info() -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://ipwho.is/")
+        .header("User-Agent", "WARP-Generator/0.1.0")
+        .send()
+        .await
+        .map_err(|e| format!("network: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    resp.text().await.map_err(|e| format!("read: {e}"))
+}
+
+#[tauri::command]
 async fn open_in_amnezia(content: String, filename: String) -> Result<String, String> {
     let dir = configs_dir()?;
     let path = dir.join(&filename);
@@ -387,6 +404,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             generate_warp_config,
             save_to_path,
+            fetch_ip_info,
             open_in_amnezia
         ])
         .run(tauri::generate_context!())

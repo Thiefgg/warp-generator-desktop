@@ -20,11 +20,19 @@
         "title": "WARP Generator",
         "width": 1200,
         "height": 760,
-        "minWidth": 900,
-        "minHeight": 600,
+        "minWidth": 1200,
+        "minHeight": 760,
+        "maxWidth": 1200,
+        "maxHeight": 760,
         "decorations": false,
-        "resizable": true,
-        "backgroundColor": "#090809"
+        "resizable": false,
+        "maximizable": false,
+        "transparent": false,
+        "backgroundColor": "#090809",
+        "windowEffects": {
+          "effects": ["mica"],
+          "state": "active"
+        }
       }
     ],
 
@@ -42,6 +50,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   }
 }
