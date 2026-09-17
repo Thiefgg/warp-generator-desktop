@@ -4855,7 +4855,7 @@ dependencies = [
 
 [[package]]
 name = "warp-generator-desktop"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "aes",
  "aes-gcm",
