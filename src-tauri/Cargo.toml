@@ -1,8 +1,8 @@
 [package]
 name = "warp-generator-desktop"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "0.1.5"
+description = "Desktop app for generating Cloudflare WARP and AmneziaWG configurations"
+authors = ["Sakeenkok <https://github.com/Thiefgg>"]
 edition = "2021"
 
 [lib]

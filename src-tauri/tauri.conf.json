@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WARP Generator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "ru.sakeen.warpgenerator",
 
   "build": {
@@ -44,6 +44,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Sakeenkok",
+    "copyright": "© 2026 Sakeenkok",
+    "category": "Utility",
+    "shortDescription": "WARP and AmneziaWG config generator",
+    "longDescription": "Desktop application for generating Cloudflare WARP and AmneziaWG configurations.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
