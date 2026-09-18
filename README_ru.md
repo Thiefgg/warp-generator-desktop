@@ -2,6 +2,8 @@
 
 [English](README.md) | **Русский**
 
+!!! Может плохо работать с московскими интернет-провайдерами !!!
+
 ![WARP Generator Desktop](.github/assets/screenshot-generator.png)
 
 Десктопное приложение для генерации конфигураций Cloudflare WARP и AmneziaWG. Написано на Tauri и Rust.
