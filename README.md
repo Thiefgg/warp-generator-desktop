@@ -3,6 +3,7 @@
 **English** | [Русский](README_ru.md)
 
 !!! MAY NOT WORK WELL WITH MOSCOW-BASED ISPS !!!
+In the next update, I will add a relay to bypass the ISP-level blocking of the Cloudflare API.
 
 ![WARP Generator Desktop](.github/assets/screenshot-generator.png)
 
