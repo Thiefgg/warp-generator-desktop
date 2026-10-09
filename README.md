@@ -1,6 +1,6 @@
 # WARP Generator Desktop
 
-**English** | [Русский](README_ru.md)
+[Русский](README_ru.md) | **English**
 
 !!! MAY NOT WORK WELL WITH MOSCOW-BASED ISPS !!!
 In the next update, I will add a relay to bypass the ISP-level blocking of the Cloudflare API.
@@ -97,8 +97,8 @@ No environment variables needed. The app registers anonymously against the publi
 | --- | --- |
 | Windows 10 (2020+) | Works |
 | Windows 11 | Works |
-| macOS | Not tested |
-| Linux | Not tested |
+
+Windows only.
 
 ## Links
 
