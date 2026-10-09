@@ -7,9 +7,18 @@
     "core:window:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:app:allow-default-window-icon",
+    "core:tray:default",
     "opener:default",
     "dialog:default",
+    "shell:default",
+    "shell:allow-execute",
     {
       "identifier": "http:default",
       "allow": [

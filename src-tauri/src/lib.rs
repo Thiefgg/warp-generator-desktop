@@ -1,5 +1,6 @@
 mod i1_masks;
 mod quic;
+mod vpn;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -58,6 +59,8 @@ struct CfWarpResult {
 struct CfConfig {
     peers: Vec<CfPeer>,
     interface: CfInterface,
+    #[serde(default)]
+    client_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,11 +79,20 @@ struct CfAddresses {
     v6: String,
 }
 
+#[allow(dead_code)]
+pub(crate) struct WarpCreds {
+    pub private_key: String,
+    pub peer_public: String,
+    pub endpoint: String,
+    pub client_ipv4: String,
+    pub client_ipv6: String,
+    pub client_id: String,
+}
+
 fn generate_keypair() -> Result<(String, String), String> {
     let mut bytes = [0u8; 32];
     getrandom::getrandom(&mut bytes).map_err(|e| e.to_string())?;
 
-    // WireGuard clamping
     bytes[0] &= 248;
     bytes[31] &= 127;
     bytes[31] |= 64;
@@ -187,9 +199,7 @@ fn build_dns_line(provider: &str, include_ipv6: bool) -> String {
                 "111.88.96.50, 111.88.96.51".into()
             }
         }
-        "dns.geohide.ru" => {
-            "45.155.204.190, 37.230.192.51".into()
-        }
+        "dns.geohide.ru" => "45.155.204.190, 37.230.192.51".into(),
         "dns.comss.one" => {
             if include_ipv6 {
                 "83.220.169.155, 212.109.195.93, 195.133.25.16, 2a01:230:4:915::2, 2a01:230:4:306::2".into()
@@ -197,9 +207,7 @@ fn build_dns_line(provider: &str, include_ipv6: bool) -> String {
                 "83.220.169.155, 212.109.195.93, 195.133.25.16".into()
             }
         }
-        "dns.mafioznik.xyz" => {
-            "103.27.157.38, 103.27.157.100".into()
-        }
+        "dns.mafioznik.xyz" => "103.27.157.38, 103.27.157.100".into(),
         _ => {
             if include_ipv6 {
                 "1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001".into()
@@ -322,6 +330,31 @@ fn find_amnezia_exe() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+#[allow(dead_code)]
+pub(crate) async fn fetch_warp_credentials() -> Result<WarpCreds, String> {
+    let (private_key, public_key) = generate_keypair()?;
+
+    let client = reqwest::Client::new();
+    let (client_id, token) = register_client(&client, &public_key).await?;
+    let warp = enable_warp(&client, &client_id, &token).await?;
+
+    let peer = warp
+        .result
+        .config
+        .peers
+        .first()
+        .ok_or_else(|| "no peers in WARP config".to_string())?;
+
+    Ok(WarpCreds {
+        private_key,
+        peer_public: peer.public_key.clone(),
+        endpoint: "engage.cloudflareclient.com:2408".to_string(),
+        client_ipv4: warp.result.config.interface.addresses.v4.clone(),
+        client_ipv6: warp.result.config.interface.addresses.v6.clone(),
+        client_id: warp.result.config.client_id.clone(),
+    })
+}
+
 #[tauri::command]
 async fn generate_warp_config(options: GenerateOptions) -> Result<String, String> {
     build_config(options).await
@@ -371,41 +404,104 @@ async fn open_in_amnezia(content: String, filename: String) -> Result<String, St
         }
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-
-        let _ = std::process::Command::new("open")
-            .arg("-a")
-            .arg("AmneziaWG")
-            .spawn();
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open")
-            .arg(dir.to_string_lossy().to_string())
-            .spawn();
-    }
-
     Ok(path.to_string_lossy().to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = vpn::cleanup_stale_adapter();
+
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    use tauri::Manager;
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(vpn::VpnManager::new())
+        .setup(|app| {
+            let open_item = MenuItemBuilder::with_id("open", "Открыть WARP Generator")
+                .build(app)?;
+            let disconnect_item = MenuItemBuilder::with_id("disconnect", "Отключить VPN")
+                .build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Выход")
+                .build(app)?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&open_item)
+                .separator()
+                .item(&disconnect_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("WARP Generator")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "open" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "disconnect" => {
+                            let state = app.state::<vpn::VpnManager>();
+                            let state = state.inner();
+                            let _ = tauri::async_runtime::block_on(state.disconnect());
+                            eprintln!("[tray] VPN disconnected from tray menu");
+                        }
+                        "quit" => {
+                            let state = app.state::<vpn::VpnManager>();
+                            let state = state.inner();
+                            let _ = tauri::async_runtime::block_on(state.disconnect());
+                            std::thread::sleep(std::time::Duration::from_millis(300));
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                eprintln!("[tray] window hidden, VPN keeps running");
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             generate_warp_config,
             save_to_path,
             fetch_ip_info,
-            open_in_amnezia
+            open_in_amnezia,
+            vpn::vpn_connect,
+            vpn::vpn_disconnect,
+            vpn::vpn_get_status,
+            vpn::app_quit
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

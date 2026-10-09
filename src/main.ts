@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { save } from "@tauri-apps/plugin-dialog";
 
-type PageName = "generator" | "ip" | "history" | "settings";
+type PageName = "generator" | "vpn" | "ip" | "history" | "settings";
 
 interface HistoryItem { id: string; date: string; format: string; dns: string; mode: string; config: string; }
 
@@ -30,15 +30,15 @@ type IpInfo = {
 };
 
 const ENDPOINTS: Record<string, string> = {
-  default: "162.159.195.1:500",
+  default: "162.159.192.1:2408",
   default2: "engage.cloudflareclient.com:2408",
-  fra1: "188.114.97.66:4500",
-  fra2: "188.114.96.125:4500",
+  fra1: "188.114.97.66:2408",
+  fra2: "188.114.96.125:2408",
 };
 
 const RANDOM_POOL: string[] = [
-  "162.159.192.1:4500", "162.159.193.1:4500", "162.159.195.1:4500",
-  "162.159.204.1:4500", "188.114.96.125:4500", "188.114.97.66:4500",
+  "162.159.192.1:2408", "162.159.193.5:2408", "162.159.195.1:2408",
+  "162.159.204.1:2408", "188.114.96.125:2408", "188.114.97.66:2408",
 ];
 
 const SELECT_IDS = ["config-format", "connection", "dns", "endpoint", "ipv6", "mtu", "keepalive"];
@@ -86,10 +86,27 @@ const errorMessage = document.querySelector<HTMLElement>("#error-message");
 const errorClose = document.querySelector<HTMLButtonElement>("#error-close");
 const errorOk = document.querySelector<HTMLButtonElement>("#error-ok");
 
+const vpnConnectBtn = document.querySelector<HTMLButtonElement>("#vpn-connect-btn");
+const vpnStatusText = document.querySelector<HTMLElement>("#vpn-status-text");
+const vpnStatusTextSmall = document.querySelector<HTMLElement>("#vpn-status-text-small");
+const vpnStatusHint = document.querySelector<HTMLElement>("#vpn-status-hint");
+const vpnStatusEl = document.querySelector<HTMLElement>("#vpn-status");
+const vpnStatsEl = document.querySelector<HTMLElement>("#vpn-stats");
+const vpnTimeEl = document.querySelector<HTMLElement>("#vpn-time");
+const vpnRxEl = document.querySelector<HTMLElement>("#vpn-rx");
+const vpnTxEl = document.querySelector<HTMLElement>("#vpn-tx");
+const vpnIfaceEl = document.querySelector<HTMLElement>("#vpn-iface");
+const vpnEndpointEl = document.querySelector<HTMLElement>("#vpn-endpoint");
+const vpnMtuEl = document.querySelector<HTMLElement>("#vpn-mtu");
+const vpnPanel = document.querySelector<HTMLElement>("#vpn-panel");
+
 let appHistory: HistoryItem[] = loadHistory();
 let currentConfig = "";
 let currentFileName = "";
 let ipLoading = false;
+let vpnState: "disconnected" | "connecting" | "connected" = "disconnected";
+let vpnTimer: number | null = null;
+let vpnStartTime = 0;
 
 function getCustomValue(id: string): string {
   return document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? "";
@@ -584,7 +601,7 @@ async function loadIpInfo() {
     if (tzEl) tzEl.textContent = data.timezone?.id || "—";
     if (typeEl) typeEl.textContent = data.type || "—";
 
-        if (statusEl) {
+    if (statusEl) {
       statusEl.dataset.state = "ok";
       const t = statusEl.querySelector<HTMLElement>(".status-text");
       if (t) t.textContent = "Готово";
@@ -601,7 +618,7 @@ async function loadIpInfo() {
     if (tzEl) tzEl.textContent = "—";
     if (typeEl) typeEl.textContent = "—";
 
-        if (statusEl) {
+    if (statusEl) {
       statusEl.dataset.state = "error";
       const t = statusEl.querySelector<HTMLElement>(".status-text");
       if (t) t.textContent = "Ошибка";
@@ -630,6 +647,147 @@ async function loadRepoStars() {
     badge.textContent = "★ —";
   }
 }
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600).toString().padStart(2, "0");
+  const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function updateVpnUI() {
+  if (!vpnStatusEl || !vpnStatusText || !vpnConnectBtn || !vpnStatsEl) return;
+
+  vpnStatusEl.dataset.state = vpnState;
+
+  if (vpnState === "disconnected") {
+    vpnStatusText.textContent = "VPN отключен";
+    if (vpnStatusTextSmall) vpnStatusTextSmall.textContent = "Отключено";
+    if (vpnStatusHint) vpnStatusHint.textContent = "Нажмите кнопку ниже, чтобы установить защищённое соединение.";
+    vpnConnectBtn.textContent = "Подключиться";
+    vpnConnectBtn.classList.remove("disconnect");
+    vpnStatsEl.hidden = true;
+    vpnPanel?.classList.remove("connected");
+    if (vpnIfaceEl) vpnIfaceEl.textContent = "—";
+    if (vpnEndpointEl) vpnEndpointEl.textContent = "—";
+    if (vpnTimer) { clearInterval(vpnTimer); vpnTimer = null; }
+  } else if (vpnState === "connecting") {
+    vpnStatusText.textContent = "Подключение...";
+    if (vpnStatusTextSmall) vpnStatusTextSmall.textContent = "Подключение...";
+    if (vpnStatusHint) vpnStatusHint.textContent = "Устанавливаем соединение, подождите.";
+    vpnConnectBtn.textContent = "Отменить";
+    vpnConnectBtn.classList.add("disconnect");
+    vpnStatsEl.hidden = true;
+  } else if (vpnState === "connected") {
+    vpnStatusText.textContent = "VPN подключен";
+    if (vpnStatusTextSmall) vpnStatusTextSmall.textContent = "Подключено";
+    if (vpnStatusHint) vpnStatusHint.textContent = "Соединение установлено, трафик защищён.";
+    vpnConnectBtn.textContent = "Отключиться";
+    vpnConnectBtn.classList.add("disconnect");
+    vpnStatsEl.hidden = false;
+    vpnPanel?.classList.add("connected");
+  }
+}
+
+let vpnPollTimer: number | null = null;
+
+function stopVpnPoll() {
+  if (vpnPollTimer !== null) {
+    clearInterval(vpnPollTimer);
+    vpnPollTimer = null;
+  }
+}
+
+function startVpnPoll() {
+  stopVpnPoll();
+
+  vpnPollTimer = window.setInterval(async () => {
+    try {
+      const status = await invoke<{
+        running: boolean;
+        iface: string | null;
+        endpoint: string | null;
+        rx_bytes: number;
+        tx_bytes: number;
+        connected_since: number | null;
+      }>("vpn_get_status");
+
+      if (status.running && vpnState !== "connected") {
+        vpnState = "connected";
+        updateVpnUI();
+
+        if (status.connected_since) {
+          vpnStartTime = status.connected_since * 1000;
+        } else {
+          vpnStartTime = Date.now();
+        }
+      }
+
+      if (!status.running && vpnState === "connected") {
+        vpnState = "disconnected";
+        updateVpnUI();
+        stopVpnPoll();
+        return;
+      }
+
+      if (status.running) {
+        if (vpnIfaceEl) vpnIfaceEl.textContent = status.iface || "usque";
+        if (vpnEndpointEl) vpnEndpointEl.textContent = status.endpoint || "—";
+        if (vpnRxEl) vpnRxEl.textContent = formatBytes(status.rx_bytes);
+        if (vpnTxEl) vpnTxEl.textContent = formatBytes(status.tx_bytes);
+
+        const elapsed = Math.floor((Date.now() - vpnStartTime) / 1000);
+        if (vpnTimeEl) vpnTimeEl.textContent = formatTime(elapsed);
+      }
+    } catch {}
+  }, 1000);
+}
+
+vpnConnectBtn?.addEventListener("click", async () => {
+  if (vpnState === "disconnected") {
+    vpnState = "connecting";
+    updateVpnUI();
+
+    const options = buildOptions();
+
+    if (vpnEndpointEl) vpnEndpointEl.textContent = "—";
+    if (vpnIfaceEl) vpnIfaceEl.textContent = "—";
+    if (vpnRxEl) vpnRxEl.textContent = "0 B";
+    if (vpnTxEl) vpnTxEl.textContent = "0 B";
+
+    try {
+      await invoke("vpn_connect", { options });
+      startVpnPoll();
+    } catch (err) {
+      vpnState = "disconnected";
+      updateVpnUI();
+      const raw = typeof err === "string" ? err : "Неизвестная ошибка";
+      showErrorModal("Не удалось подключиться", "Ошибка VPN", raw);
+    }
+  } else if (vpnState === "connecting") {
+    try {
+      await invoke("vpn_disconnect");
+    } catch {}
+    stopVpnPoll();
+    vpnState = "disconnected";
+    updateVpnUI();
+  } else {
+    try {
+      await invoke("vpn_disconnect");
+    } catch {}
+    stopVpnPoll();
+    vpnState = "disconnected";
+    updateVpnUI();
+  }
+});
 
 navItems.forEach((item) => {
   item.addEventListener("click", () => {
@@ -806,7 +964,11 @@ minimizeButton?.addEventListener("click", async (event) => {
 
 closeButton?.addEventListener("click", async (event) => {
   event.stopPropagation();
-  await appWindow.close();
+  try {
+    await invoke("app_quit");
+  } catch {
+    await appWindow.close();
+  }
 });
 
 document.querySelectorAll<HTMLAnchorElement>(".footer a, .project-link").forEach((link) => {
@@ -824,4 +986,5 @@ renderHistory();
 updatePreview();
 updateEndpointVisibility();
 updateMtuVisibility();
+updateVpnUI();
 void loadRepoStars();

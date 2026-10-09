@@ -31,6 +31,13 @@
           <span>Генератор</span>
         </button>
 
+        <button class="nav-item" data-page="vpn" type="button">
+          <span class="nav-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" /><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </span>
+          <span>VPN</span>
+        </button>
+
         <button class="nav-item" data-page="ip" type="button">
           <span class="nav-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" /><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
@@ -62,7 +69,6 @@
     <main class="content">
 
       <section class="page active" data-page-content="generator">
-
         <div class="page-heading">
           <div>
             <h1>Генератор</h1>
@@ -75,7 +81,6 @@
         </div>
 
         <div class="workspace">
-
           <div class="panel generator-panel">
             <div class="panel-heading">
               <div>
@@ -87,7 +92,6 @@
 
             <form id="generator-form">
               <div class="fields-grid">
-
                 <div class="field custom-select-field">
                   <span>Формат конфигурации</span>
                   <div class="custom-select" data-select-id="config-format">
@@ -158,7 +162,6 @@
                   </div>
                   <input type="hidden" id="endpoint" value="default" />
                 </div>
-
               </div>
 
               <div class="field full-field endpoint-custom-field" id="endpoint-custom-field" hidden>
@@ -182,7 +185,6 @@
               <div class="advanced-content" id="advanced-content">
                 <div class="advanced-inner">
                   <div class="fields-grid">
-
                     <div class="field custom-select-field">
                       <span>IPv6</span>
                       <div class="custom-select" data-select-id="ipv6">
@@ -232,7 +234,6 @@
                       </div>
                       <input type="hidden" id="keepalive" value="25" />
                     </div>
-
                   </div>
 
                   <div class="field full-field endpoint-custom-field" id="mtu-custom-field" hidden>
@@ -253,7 +254,6 @@
                 <span class="generate-icon">✦</span>
                 <span>Сгенерировать конфигурацию</span>
               </button>
-
             </form>
           </div>
 
@@ -280,6 +280,85 @@
               <div class="preview-row"><span>Формат</span><strong id="preview-format">WireGuard</strong></div>
               <div class="preview-row"><span>DNS</span><strong id="preview-dns">1.1.1.1</strong></div>
             </div>
+          </aside>
+        </div>
+      </section>
+
+            <section class="page" data-page-content="vpn">
+        <div class="page-heading">
+          <div>
+            <h1>VPN</h1>
+            <p>Управление встроенным VPN-соединением.</p>
+          </div>
+          <div class="connection-status" id="vpn-status" data-state="disconnected">
+            <span class="status-dot"></span>
+            <span class="status-text" id="vpn-status-text-small">Отключено</span>
+          </div>
+        </div>
+
+        <div class="vpn-workspace">
+
+          <div class="panel vpn-main-panel" id="vpn-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Соединение</h2>
+                <p>Установите защищённый туннель WireGuard.</p>
+              </div>
+              <span class="panel-symbol">◈</span>
+            </div>
+
+            <div class="vpn-status-block">
+              <h3 id="vpn-status-text">VPN отключен</h3>
+              <p id="vpn-status-hint">Нажмите кнопку ниже, чтобы установить защищённое соединение.</p>
+            </div>
+
+            <button class="connect-button" id="vpn-connect-btn" type="button">
+              <span>Подключиться</span>
+            </button>
+          </div>
+
+          <aside class="side-column">
+
+            <div class="panel vpn-stats-panel" id="vpn-stats" hidden>
+              <span class="eyebrow">СТАТИСТИКА</span>
+              <div class="vpn-stats-list">
+                <div class="vpn-stat-row">
+                  <span>Время</span>
+                  <strong id="vpn-time">00:00:00</strong>
+                </div>
+                <div class="vpn-stat-row">
+                  <span>Получено</span>
+                  <strong id="vpn-rx">0 B</strong>
+                </div>
+                <div class="vpn-stat-row">
+                  <span>Отправлено</span>
+                  <strong id="vpn-tx">0 B</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel vpn-info-panel">
+              <span class="eyebrow">ДЕТАЛИ</span>
+              <div class="vpn-info-list">
+                <div class="vpn-info-row">
+                  <span>Интерфейс</span>
+                  <strong id="vpn-iface">—</strong>
+                </div>
+                <div class="vpn-info-row">
+                  <span>Конечная точка</span>
+                  <strong id="vpn-endpoint">—</strong>
+                </div>
+                <div class="vpn-info-row">
+                  <span>Протокол</span>
+                  <strong id="vpn-proto">WireGuard</strong>
+                </div>
+                <div class="vpn-info-row">
+                  <span>MTU</span>
+                  <strong id="vpn-mtu">1280</strong>
+                </div>
+              </div>
+            </div>
+
           </aside>
 
         </div>
