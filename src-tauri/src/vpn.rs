@@ -494,12 +494,25 @@ pub async fn vpn_get_status(state: tauri::State<'_, VpnManager>) -> Result<VpnSt
 }
 
 #[tauri::command]
+pub async fn app_hide(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn app_quit(
     app: tauri::AppHandle,
     state: tauri::State<'_, VpnManager>,
+    keepvpn: Option<bool>,
 ) -> Result<(), String> {
-    let _ = state.disconnect().await;
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    if keepvpn != Some(true) {
+        let _ = state.disconnect().await;
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    } else if let Some(c) = state.child.lock().unwrap().take() {
+        let _ = c.kill();
+    }
     app.exit(0);
     Ok(())
 }

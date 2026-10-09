@@ -17,6 +17,7 @@ interface GenerateOptions {
 interface SavedSettings {
   autoHistory: boolean; excludeLan: boolean; endpointCustom: string;
   customI1: string; mtuCustom: string; selects: Record<string, string>;
+  trayEnabled: boolean; trayKeepVpn: boolean; trayMenu: boolean;
 }
 
 type IpInfo = {
@@ -56,6 +57,9 @@ const previewDns = document.querySelector<HTMLElement>("#preview-dns");
 const historyList = document.querySelector<HTMLElement>("#history-list");
 const clearHistory = document.querySelector<HTMLButtonElement>("#clear-history");
 const autoHistory = document.querySelector<HTMLInputElement>("#auto-history");
+const trayEnabled = document.querySelector<HTMLInputElement>("#tray-enabled");
+const trayKeepVpn = document.querySelector<HTMLInputElement>("#tray-keep-vpn");
+const trayMenu = document.querySelector<HTMLInputElement>("#tray-menu");
 const excludeLan = document.querySelector<HTMLInputElement>("#exclude-lan");
 const minimizeButton = document.querySelector<HTMLButtonElement>("#window-minimize");
 const closeButton = document.querySelector<HTMLButtonElement>("#window-close");
@@ -347,6 +351,9 @@ function saveSettings() {
     customI1: customI1Input?.value ?? "",
     mtuCustom: mtuCustomInput?.value ?? "",
     selects,
+    trayEnabled: trayEnabled?.checked ?? true,
+    trayKeepVpn: trayKeepVpn?.checked ?? true,
+    trayMenu: trayMenu?.checked ?? true,
   };
 
   localStorage.setItem("warp-generator-settings", JSON.stringify(data));
@@ -371,6 +378,9 @@ function applySettings() {
   if (saved.endpointCustom && endpointCustomInput) endpointCustomInput.value = saved.endpointCustom;
   if (saved.customI1 && customI1Input) customI1Input.value = saved.customI1;
   if (saved.mtuCustom && mtuCustomInput) mtuCustomInput.value = saved.mtuCustom;
+  if (typeof saved.trayEnabled === "boolean" && trayEnabled) trayEnabled.checked = saved.trayEnabled;
+  if (typeof saved.trayKeepVpn === "boolean" && trayKeepVpn) trayKeepVpn.checked = saved.trayKeepVpn;
+  if (typeof saved.trayMenu === "boolean" && trayMenu) trayMenu.checked = saved.trayMenu;
 }
 
 function renderHistory() {
@@ -829,6 +839,9 @@ generatorForm?.addEventListener("submit", (event) => {
 });
 
 autoHistory?.addEventListener("change", saveSettings);
+trayEnabled?.addEventListener("change", saveSettings);
+trayKeepVpn?.addEventListener("change", saveSettings);
+trayMenu?.addEventListener("change", saveSettings);
 excludeLan?.addEventListener("change", saveSettings);
 endpointCustomInput?.addEventListener("input", saveSettings);
 
@@ -987,10 +1000,10 @@ minimizeButton?.addEventListener("click", async (event) => {
 
 closeButton?.addEventListener("click", async (event) => {
   event.stopPropagation();
-  try {
-    await invoke("app_quit");
-  } catch {
-    await appWindow.close();
+  if (trayEnabled?.checked) {
+    await invoke("app_hide");
+  } else {
+    await invoke("app_quit", { keepvpn: trayKeepVpn?.checked ?? false });
   }
 });
 
