@@ -172,7 +172,7 @@ async fn enable_warp(
     Ok(data)
 }
 
-fn build_dns_line(provider: &str, include_ipv6: bool) -> String {
+pub(crate) fn build_dns_line(provider: &str, include_ipv6: bool) -> String {
     match provider {
         "8.8.8.8" => {
             if include_ipv6 {

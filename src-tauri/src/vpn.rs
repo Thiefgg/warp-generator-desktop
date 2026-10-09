@@ -145,7 +145,10 @@ impl VpnManager {
 
         cleanup_stale_adapter();
 
-        let dns = options.dns.clone();
+        let include_ipv6 = options.ipv6 == "enabled";
+        let dns = crate::build_dns_line(&options.dns, include_ipv6);
+        let mtu = if options.mtu == 0 { 1280 } else { options.mtu };
+        let profile = options.profile.as_deref().unwrap_or("standard");
 
         if let Err(e) = setup_exclusion_route() {
             lg!("[vpn] exclusion route warning: {e}");
@@ -161,18 +164,30 @@ impl VpnManager {
 
         let shell = app.shell();
 
+        let cfg_arg = cfg.to_string_lossy().to_string();
+        let mut args: Vec<String> = vec![
+            "-c".into(),
+            cfg_arg,
+            "nativetun".into(),
+            "-n".into(),
+            "usque".into(),
+            "-m".into(),
+            mtu.to_string(),
+            "--always-reconnect".into(),
+        ];
+        if profile != "standard" {
+            args.push("--http2".into());
+        }
+        if profile == "paranoid" {
+            args.push("-k".into());
+            args.push("60s".into());
+        }
+
         let (mut rx, child) = shell
             .sidecar("usque")
             .map_err(|e| format!("sidecar not found: {e}"))?
             .current_dir(&binaries_dir)
-            .args([
-                "-c",
-                &cfg.to_string_lossy(),
-                "nativetun",
-                "-n",
-                "usque",
-                "--always-reconnect",
-            ])
+            .args(args)
             .spawn()
             .map_err(|e| format!("spawn failed: {e}"))?;
 
@@ -201,6 +216,7 @@ impl VpnManager {
                     }
 
                     let dns_ref: &str = if dns.is_empty() { "1.1.1.1" } else { &dns };
+                    lg!("[vpn] DNS из генератора: {dns_ref}");
                     if let Err(e) = setup_dns(dns_ref) {
                         lg!("[vpn] setup_dns warning: {e}");
                     }
