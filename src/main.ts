@@ -105,7 +105,6 @@ let currentConfig = "";
 let currentFileName = "";
 let ipLoading = false;
 let vpnState: "disconnected" | "connecting" | "connected" = "disconnected";
-let vpnTimer: number | null = null;
 let vpnStartTime = 0;
 
 function getCustomValue(id: string): string {
@@ -702,7 +701,7 @@ function updateVpnUI() {
     vpnPanel?.classList.remove("connected");
     if (vpnIfaceEl) vpnIfaceEl.textContent = "—";
     if (vpnEndpointEl) vpnEndpointEl.textContent = "—";
-    if (vpnTimer) { clearInterval(vpnTimer); vpnTimer = null; }
+    if (vpnStartTime) { vpnStartTime = 0; stopVpnPoll(); }
   } else if (vpnState === "connecting") {
     vpnStatusText.textContent = "Подключение...";
     if (vpnStatusTextSmall) vpnStatusTextSmall.textContent = "Подключение...";
