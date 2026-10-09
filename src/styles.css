@@ -402,7 +402,7 @@ a { color: inherit; text-decoration: none; }
 .vpn-workspace { display: grid; grid-template-columns: minmax(0,1fr) 245px; gap: 14px; align-items: start; }
 .vpn-main-panel { padding: 20px; display: flex; flex-direction: column; gap: 20px; transition: border-color 0.3s ease; }
 .vpn-main-panel.connected { border-color: rgba(113,201,154,0.35); }
-.vpn-status-block { padding: 20px 22px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; }
+.vpn-status-block { padding: 20px 22px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 11px; }
 .vpn-status-block h3 { margin: 0 0 6px; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
 .vpn-status-block p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.55; }
 
@@ -536,4 +536,68 @@ a { color: inherit; text-decoration: none; }
   .side-column { display: flex; }
   .generator-panel, .history-panel, .settings-panel { padding: 17px; }
   .ip-details { grid-template-columns: 1fr; }
+}
+/* tray popup v2 */
+.tray-body {
+  width: 240px; overflow: hidden;
+  background: transparent;
+  padding: 10px 10px 20px 10px;
+}
+
+.tray-menu {
+  display: flex; flex-direction: column;
+  padding: 6px; margin: 0;
+  background: #1a1a1c;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.4);
+}
+
+.tray-item {
+  display: flex; align-items: center; gap: 10px;
+  height: 34px; padding: 0 10px; border-radius: 8px;
+  font-size: 13.5px; color: #dcdcdf; letter-spacing: .1px;
+  cursor: default; transition: background .1s linear, color .1s linear;
+}
+
+.tray-item:hover { background: var(--accent); color: #fff; }
+.tray-item:hover .tray-icon { color: #fff; }
+.tray-item:hover .tray-box { border-color: rgba(255,255,255,.7); }
+.tray-item:active { background: var(--accent-dark); }
+
+.tray-icon { display: flex; width: 16px; height: 16px; color: #a9a1a7; flex: 0 0 auto; }
+.tray-icon svg { width: 100%; height: 100%; }
+
+.tray-disabled, .tray-item.disabled { opacity: .34; }
+.tray-item.disabled:hover { background: transparent; color: #dcdcdf; }
+.tray-item.disabled:hover .tray-icon { color: #a9a1a7; }
+
+.tray-sep { height: 1px; margin: 5px 8px; background: rgba(255,255,255,0.07); }
+
+.tray-label {
+  display: flex; align-items: center; gap: 8px;
+  height: 26px; padding: 0 10px;
+  font-size: 12.5px; color: #7f8285;
+}
+
+.tray-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: #5c5e63; transition: background .15s ease, box-shadow .15s ease;
+}
+
+.tray-label.on { color: var(--success); }
+.tray-label.on .tray-dot { background: var(--success); box-shadow: 0 0 7px rgba(113,201,154,.6); }
+
+.tray-box {
+  width: 15px; height: 15px; border-radius: 4px; flex: 0 0 auto;
+  border: 1.5px solid #5c5e63; background: transparent; position: relative;
+  transition: background .1s linear, border-color .1s linear;
+}
+
+.tray-box.on { background: var(--accent); border-color: var(--accent); }
+
+.tray-box.on::after {
+  content: ""; position: absolute; left: 4px; top: 0px;
+  width: 4px; height: 9px; border: solid #fff;
+  border-width: 0 2px 2px 0; transform: rotate(43deg);
 }
