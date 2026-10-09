@@ -1,9 +1,92 @@
+use std::io::Write;
+use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+
+fn log_path() -> PathBuf {
+    std::env::var_os("TEMP")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join("warp-gen.log")
+}
+
+macro_rules! lg {
+    ($($a:tt)*) => {{
+        let m = format!($($a)*);
+        eprintln!("{m}");
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path())
+        {
+            let _ = writeln!(f, "{m}");
+        }
+    }};
+}
+
+fn sidecar_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let mut c = vec![app.path().resource_dir().map_err(|e| e.to_string())?];
+    if let Ok(e) = std::env::current_exe() {
+        if let Some(d) = e.parent() {
+            c.push(d.to_path_buf());
+        }
+    }
+    if let Ok(d) = std::env::current_dir() {
+        c.push(d.join("binaries"));
+    }
+    for d in c {
+        if d.join("wintun.dll").exists() {
+            return Ok(d);
+        }
+    }
+    Err("wintun.dll не найден".into())
+}
+
+fn cfg_path() -> Result<PathBuf, String> {
+    let d = PathBuf::from(std::env::var("APPDATA").map_err(|e| e.to_string())?)
+        .join("WARP Generator");
+    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    Ok(d.join("usque.json"))
+}
+
+async fn usque_register(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String> {
+    lg!("[vpn] регистрация нового аккаунта usque");
+    let (mut rx, _ch) = app
+        .shell()
+        .sidecar("usque")
+        .map_err(|e| e.to_string())?
+        .args(["register", "-a", "-c", &cfg.to_string_lossy()])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    let mut err = String::new();
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            CommandEvent::Stdout(b) => lg!("[usque] {}", String::from_utf8_lossy(&b).trim()),
+            CommandEvent::Stderr(b) => err.push_str(&String::from_utf8_lossy(&b)),
+            CommandEvent::Terminated(p) => {
+                let code = p.code.unwrap_or(-1);
+                return if code == 0 {
+                    lg!("[vpn] регистрация успешна");
+                    Ok(())
+                } else {
+                    Err(if err.trim().is_empty() {
+                        format!("регистрация провалилась (код {code})")
+                    } else {
+                        err.trim().to_string()
+                    })
+                };
+            }
+            _ => {}
+        }
+    }
+    Err("регистрация прервана".into())
+}
 
 #[derive(Clone, serde::Serialize)]
 pub struct VpnStatus {
@@ -65,14 +148,16 @@ impl VpnManager {
         let dns = options.dns.clone();
 
         if let Err(e) = setup_exclusion_route() {
-            eprintln!("[vpn] exclusion route warning: {e}");
+            lg!("[vpn] exclusion route warning: {e}");
         }
 
-        let binaries_dir = std::env::current_dir()
-            .map_err(|e| format!("current_dir: {e}"))?
-            .join("binaries");
+        let binaries_dir = sidecar_dir(app)?;
+        lg!("[vpn] sidecar dir: {}", binaries_dir.display());
 
-        eprintln!("[vpn] binaries dir: {}", binaries_dir.display());
+        let cfg = cfg_path()?;
+        if !cfg.exists() {
+            usque_register(app, &cfg).await?;
+        }
 
         let shell = app.shell();
 
@@ -80,7 +165,14 @@ impl VpnManager {
             .sidecar("usque")
             .map_err(|e| format!("sidecar not found: {e}"))?
             .current_dir(&binaries_dir)
-            .args(["nativetun"])
+            .args([
+                "-c",
+                &cfg.to_string_lossy(),
+                "nativetun",
+                "-n",
+                "usque",
+                "--always-reconnect",
+            ])
             .spawn()
             .map_err(|e| format!("spawn failed: {e}"))?;
 
@@ -94,15 +186,15 @@ impl VpnManager {
         tauri::async_runtime::spawn(async move {
             let mut ready = false;
 
-            let mut handle_line = |line: &str, status: &Arc<Mutex<VpnStatus>>, ready: &mut bool| {
+            let handle_line = |line: &str, status: &Arc<Mutex<VpnStatus>>, ready: &mut bool| {
                 if !*ready && line.contains("Connected to MASQUE server") {
                     *ready = true;
-                    eprintln!("[vpn] detected MASQUE connected, setting up routes...");
+                    lg!("[vpn] detected MASQUE connected, setting up routes...");
 
                     std::thread::sleep(std::time::Duration::from_millis(1500));
 
                     if let Err(e) = setup_main_route() {
-                        eprintln!("[vpn] setup_main_route failed: {e}");
+                        lg!("[vpn] setup_main_route failed: {e}");
                         let mut s = status.lock().unwrap();
                         s.running = false;
                         return;
@@ -110,7 +202,7 @@ impl VpnManager {
 
                     let dns_ref: &str = if dns.is_empty() { "1.1.1.1" } else { &dns };
                     if let Err(e) = setup_dns(dns_ref) {
-                        eprintln!("[vpn] setup_dns warning: {e}");
+                        lg!("[vpn] setup_dns warning: {e}");
                     }
 
                     let mut s = status.lock().unwrap();
@@ -131,14 +223,14 @@ impl VpnManager {
                     CommandEvent::Stdout(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
                         for line in text.lines() {
-                            eprintln!("[usque] {line}");
+                            lg!("[usque] {line}");
                             handle_line(line, &status, &mut ready);
                         }
                     }
                     CommandEvent::Stderr(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
                         for line in text.lines() {
-                            eprintln!("[usque:err] {line}");
+                            lg!("[usque:err] {line}");
                             handle_line(line, &status, &mut ready);
                         }
                     }
@@ -199,12 +291,8 @@ impl VpnManager {
 }
 
 fn get_adapter_stats() -> (u64, u64) {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "$s = Get-NetAdapterStatistics -Name 'usque' -ErrorAction SilentlyContinue; if ($s) { \"$($s.ReceivedBytes)|$($s.SentBytes)\" }",
-        ])
+    let output = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$s = Get-NetAdapterStatistics -Name 'usque' -ErrorAction SilentlyContinue; if ($s) { \"$($s.ReceivedBytes)|$($s.SentBytes)\" }"])
         .output();
 
     if let Ok(out) = output {
@@ -222,20 +310,22 @@ fn get_adapter_stats() -> (u64, u64) {
 }
 
 pub fn cleanup_stale_adapter() {
-    let _ = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Remove-NetAdapter -Name 'usque' -Confirm:$false -ErrorAction SilentlyContinue",
-        ])
+    let _ = cmd("powershell")
+        .args(["-NoProfile", "-Command", "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Remove-NetAdapter -Name 'usque' -Confirm:$false -ErrorAction SilentlyContinue"])
         .output();
 
     std::thread::sleep(std::time::Duration::from_millis(800));
-    eprintln!("[vpn] cleanup stale adapter done");
+    lg!("[vpn] cleanup stale adapter done");
+}
+
+fn cmd(p: &str) -> Command {
+    let mut c = Command::new(p);
+    c.creation_flags(0x08000000);
+    c
 }
 
 fn is_admin() -> bool {
-    Command::new("net")
+    cmd("net")
         .arg("session")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -245,7 +335,7 @@ fn is_admin() -> bool {
 }
 
 fn get_iface_idx(name: &str) -> Option<u32> {
-    let output = Command::new("netsh")
+    let output = cmd("netsh")
         .args(["interface", "ipv4", "show", "interfaces"])
         .output()
         .ok()?;
@@ -263,12 +353,8 @@ fn get_iface_idx(name: &str) -> Option<u32> {
 }
 
 fn get_default_gateway_and_idx() -> Option<(String, u32)> {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '0.0.0.0' -and $_.InterfaceAlias -ne 'usque' } | Sort-Object RouteMetric | Select-Object -First 1; if ($r) { \"$($r.NextHop)|$($r.InterfaceIndex)\" }",
-        ])
+    let output = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '0.0.0.0' -and $_.InterfaceAlias -ne 'usque' } | Sort-Object RouteMetric | Select-Object -First 1; if ($r) { \"$($r.NextHop)|$($r.InterfaceIndex)\" }"])
         .output()
         .ok()?;
 
@@ -289,15 +375,12 @@ fn setup_exclusion_route() -> Result<(), String> {
     let (gw, idx) = get_default_gateway_and_idx()
         .ok_or_else(|| "default gateway not found".to_string())?;
 
-    let _ = Command::new("route")
+    let _ = cmd("route")
         .args(["delete", "162.159.192.0", "mask", "255.255.240.0"])
         .output();
 
-    let output = Command::new("route")
-        .args([
-            "add", "162.159.192.0", "mask", "255.255.240.0", &gw,
-            "metric", "1", "if", &idx.to_string(),
-        ])
+    let output = cmd("route")
+        .args(["add", "162.159.192.0", "mask", "255.255.240.0", &gw, "metric", "1", "if", &idx.to_string()])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -308,18 +391,15 @@ fn setup_exclusion_route() -> Result<(), String> {
         ));
     }
 
-    eprintln!("[vpn] exclusion route via {gw} if {idx}");
+    lg!("[vpn] exclusion route via {gw} if {idx}");
     Ok(())
 }
 
 fn setup_main_route() -> Result<(), String> {
     let idx = get_iface_idx("usque").ok_or_else(|| "usque interface not found".to_string())?;
 
-    let output = Command::new("route")
-        .args([
-            "add", "0.0.0.0", "mask", "0.0.0.0", "0.0.0.0",
-            "metric", "1", "if", &idx.to_string(),
-        ])
+    let output = cmd("route")
+        .args(["add", "0.0.0.0", "mask", "0.0.0.0", "0.0.0.0", "metric", "1", "if", &idx.to_string()])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -330,19 +410,16 @@ fn setup_main_route() -> Result<(), String> {
         ));
     }
 
-    eprintln!("[vpn] main route via usque if {idx}");
+    lg!("[vpn] main route via usque if {idx}");
     Ok(())
 }
 
 fn teardown_main_route() -> Result<(), String> {
     if let Some(idx) = get_iface_idx("usque") {
-        let _ = Command::new("route")
-            .args([
-                "delete", "0.0.0.0", "mask", "0.0.0.0",
-                "if", &idx.to_string(),
-            ])
+        let _ = cmd("route")
+            .args(["delete", "0.0.0.0", "mask", "0.0.0.0", "if", &idx.to_string()])
             .output();
-        eprintln!("[vpn] main route removed if {idx}");
+        lg!("[vpn] main route removed if {idx}");
     }
     Ok(())
 }
@@ -367,12 +444,10 @@ fn setup_dns(dns: &str) -> Result<(), String> {
         .collect::<Vec<_>>()
         .join(",");
 
-    let cmd = format!(
-        "Set-DnsClientServerAddress -InterfaceAlias 'usque' -ServerAddresses ({list})"
-    );
+    let ps = format!("Set-DnsClientServerAddress -InterfaceAlias 'usque' -ServerAddresses ({list})");
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &cmd])
+    let output = cmd("powershell")
+        .args(["-NoProfile", "-Command", &ps])
         .output()
         .map_err(|e| e.to_string())?;
 
@@ -380,7 +455,7 @@ fn setup_dns(dns: &str) -> Result<(), String> {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
 
-    eprintln!("[vpn] DNS set: {:?}", servers);
+    lg!("[vpn] DNS set: {:?}", servers);
     Ok(())
 }
 

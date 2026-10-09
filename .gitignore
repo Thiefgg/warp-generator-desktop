@@ -18,6 +18,7 @@ src-tauri/gen/schemas
 
 # Local files
 *.local
+src-tauri/binaries/config.json
 
 # Editor directories and files
 .vscode/*

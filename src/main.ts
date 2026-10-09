@@ -97,7 +97,6 @@ const vpnRxEl = document.querySelector<HTMLElement>("#vpn-rx");
 const vpnTxEl = document.querySelector<HTMLElement>("#vpn-tx");
 const vpnIfaceEl = document.querySelector<HTMLElement>("#vpn-iface");
 const vpnEndpointEl = document.querySelector<HTMLElement>("#vpn-endpoint");
-const vpnMtuEl = document.querySelector<HTMLElement>("#vpn-mtu");
 const vpnPanel = document.querySelector<HTMLElement>("#vpn-panel");
 
 let appHistory: HistoryItem[] = loadHistory();
