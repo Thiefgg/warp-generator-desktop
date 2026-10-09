@@ -13,6 +13,7 @@ node_modules
 # Build output
 dist
 dist-ssr
+src-tauri/.cargo
 src-tauri/target
 src-tauri/gen/schemas
 
