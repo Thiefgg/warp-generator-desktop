@@ -60,7 +60,41 @@ npm run tauri dev      # development
 npm run tauri build    # production installer
 ```
 
-The installer will be in `src-tauri/target/release/bundle/`.
+The installer will be in the bundle path configured in `src-tauri/.cargo/config.toml` (default `C:\Users\<user>\AppData\Local\cargo-target\warp-generator\release\bundle\`).
+
+## Config formats
+
+| Format | Description |
+| --- | --- |
+| WireGuard | Standard config, works with any WireGuard client |
+| AmneziaWG | AmneziaWG obfuscation parameters |
+| Sakeen | Custom format with a `[Stealth]` section |
+
+### Sakeen
+
+The app's own format. Unlike AmneziaWG, the masking domain is picked at random on every generation from a list of allowed resources, so the handshake pattern never repeats and cannot be learned.
+
+Three profiles:
+
+| Profile | Transport | Purpose |
+| --- | --- | --- |
+| Light | HTTP/2 over TCP | Maximum speed |
+| Standard | HTTP/3 over QUIC | Balanced |
+| Paranoid | HTTP/2, 60s keepalive | Maximum stealth |
+
+## VPN tab
+
+Runs the tunnel directly inside the app — no config file on disk, no AmneziaWG needed.
+
+On first connect the app registers a fresh anonymous Cloudflare account and stores it in `%APPDATA%\WARP Generator\usque.json`. Every user gets their own account and their own IP.
+
+Settings come from the Generator tab: DNS, MTU and the stealth profile are applied to the tunnel.
+
+Administrator rights are required — the app brings up a TUN adapter and changes routes.
+
+Closing the window hides the app to the tray and the tunnel keeps running. Full disconnect and exit are in the tray menu.
+
+Logs are written to `%TEMP%\warp-gen.log`.
 
 ## Project structure
 
@@ -75,7 +109,12 @@ The installer will be in `src-tauri/target/release/bundle/`.
 │   │   ├── lib.rs
 │   │   ├── main.rs
 │   │   ├── i1_masks.rs
-│   │   └── quic.rs
+│   │   ├── quic.rs
+│   │   ├── sakeen.rs
+│   │   └── vpn.rs
+│   ├── binaries/
+│   │   ├── usque-x86_64-pc-windows-msvc.exe
+│   │   └── wintun.dll
 │   ├── capabilities/
 │   ├── icons/
 │   ├── Cargo.toml
