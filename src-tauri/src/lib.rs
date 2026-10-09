@@ -3,6 +3,9 @@ mod quic;
 mod sakeen;
 mod vpn;
 
+use tauri::webview::WebviewWindowBuilder;
+use tauri::{WebviewUrl, Manager};
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -463,13 +466,80 @@ async fn open_in_amnezia(content: String, filename: String) -> Result<String, St
     Ok(path.to_string_lossy().to_string())
 }
 
+fn show_tray_menu(app: &tauri::AppHandle) {
+    let win = match app.get_webview_window("tray") {
+        Some(w) => w,
+        None => {
+            match WebviewWindowBuilder::new(
+                app,
+                "tray",
+                WebviewUrl::App("tray.html".into()),
+            )
+            .title("tray")
+            .inner_size(240.0, 210.0)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .shadow(false)
+            .focused(false)
+            .visible(false)
+            .build()
+            {
+                Ok(w) => w,
+                Err(e) => {
+                    crate::vpn::lg(format!("[tray] popup build failed: {e}").into());
+                    return;
+                }
+            }
+        }
+    };
+
+    let mon = match win.current_monitor() {
+        Ok(Some(m)) => m,
+        _ => return,
+    };
+
+    let scale = mon.scale_factor();
+    let size = match win.outer_size() {
+        Ok(s) => s,
+        _ => return,
+    };
+
+    let area = mon.work_area();
+
+    let gap = (8.0 * scale) as i32;
+    let x = area.position.x + area.size.width as i32 - size.width as i32 - gap;
+    let y = area.position.y + area.size.height as i32 - size.height as i32 - gap;
+
+    let _ = win.set_position(tauri::PhysicalPosition { x, y });
+    let _ = win.show();
+    let _ = win.set_always_on_top(true);
+    let _ = win.set_focus();
+}
+
+#[tauri::command]
+fn tray_show_main(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+#[tauri::command]
+fn tray_quit(app: tauri::AppHandle, state: tauri::State<'_, vpn::VpnManager>) {
+    let _ = tauri::async_runtime::block_on(state.disconnect());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = vpn::cleanup_stale_adapter();
 
-    use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    use tauri::Manager;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -478,64 +548,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(vpn::VpnManager::new())
         .setup(|app| {
-            let open_item = MenuItemBuilder::with_id("open", "Открыть WARP Generator")
-                .build(app)?;
-            let disconnect_item = MenuItemBuilder::with_id("disconnect", "Отключить VPN")
-                .build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Выход")
-                .build(app)?;
-
-            let menu = MenuBuilder::new(app)
-                .item(&open_item)
-                .separator()
-                .item(&disconnect_item)
-                .separator()
-                .item(&quit_item)
-                .build()?;
-
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("WARP Generator")
-                .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "open" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "disconnect" => {
-                            let state = app.state::<vpn::VpnManager>();
-                            let state = state.inner();
-                            let _ = tauri::async_runtime::block_on(state.disconnect());
-                            crate::vpn::lg("[tray] VPN disconnected from tray menu".into());
-                        }
-                        "quit" => {
-                            let state = app.state::<vpn::VpnManager>();
-                            let state = state.inner();
-                            let _ = tauri::async_runtime::block_on(state.disconnect());
-                            std::thread::sleep(std::time::Duration::from_millis(300));
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
+                    if let TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, .. } = event {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
+                        show_tray_menu(app);
                     }
                 })
                 .build(app)?;
@@ -543,10 +563,21 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-                crate::vpn::lg("[tray] window hidden, VPN keeps running".into());
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "tray" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        return;
+                    }
+                    api.prevent_close();
+                    let _ = window.hide();
+                    crate::vpn::lg("[tray] window hidden, VPN keeps running".into());
+                }
+                tauri::WindowEvent::Focused(false) if window.label() == "tray" => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -557,7 +588,10 @@ pub fn run() {
             vpn::vpn_connect,
             vpn::vpn_disconnect,
             vpn::vpn_get_status,
-            vpn::app_quit
+            vpn::app_hide,
+            vpn::app_quit,
+            tray_show_main,
+            tray_quit
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
