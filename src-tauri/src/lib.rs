@@ -511,7 +511,7 @@ pub fn run() {
                             let state = app.state::<vpn::VpnManager>();
                             let state = state.inner();
                             let _ = tauri::async_runtime::block_on(state.disconnect());
-                            eprintln!("[tray] VPN disconnected from tray menu");
+                            crate::vpn::lg("[tray] VPN disconnected from tray menu".into());
                         }
                         "quit" => {
                             let state = app.state::<vpn::VpnManager>();
@@ -546,7 +546,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
-                eprintln!("[tray] window hidden, VPN keeps running");
+                crate::vpn::lg("[tray] window hidden, VPN keeps running".into());
             }
         })
         .invoke_handler(tauri::generate_handler![

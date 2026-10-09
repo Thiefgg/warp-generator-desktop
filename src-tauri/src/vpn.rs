@@ -8,25 +8,24 @@ use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-fn log_path() -> PathBuf {
-    std::env::var_os("TEMP")
-        .map(PathBuf::from)
-        .unwrap_or_default()
-        .join("warp-gen.log")
+pub fn lg(m: String) {
+    eprintln!("{m}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(
+            std::env::var_os("TEMP")
+                .map(PathBuf::from)
+                .unwrap_or_default()
+                .join("warp-gen.log"),
+        )
+    {
+        let _ = writeln!(f, "{m}");
+    }
 }
 
 macro_rules! lg {
-    ($($a:tt)*) => {{
-        let m = format!($($a)*);
-        eprintln!("{m}");
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path())
-        {
-            let _ = writeln!(f, "{m}");
-        }
-    }};
+    ($($a:tt)*) => { $crate::vpn::lg(format!($($a)*)) };
 }
 
 fn sidecar_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
