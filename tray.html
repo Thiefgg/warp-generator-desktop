@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WARP Generator</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      html, body, #root, #app {
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        min-height: 0 !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        color-scheme: normal !important;
+      }
+    </style>
+  </head>
+  <body class="tray-body">
+    <div class="tray-menu" id="tray-menu">
+      <div class="tray-item tray-open" id="tray-open">
+        <span class="tray-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /><path d="M6 10.5V20h12v-9.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </span>
+        <span>Открыть WARP Generator</span>
+      </div>
+
+      <div class="tray-sep"></div>
+
+      <div class="tray-label" id="tray-status"><span class="tray-dot"></span><span id="tray-status-text">VPN: отключен</span></div>
+
+      <div class="tray-item tray-danger" id="tray-disconnect">
+        <span class="tray-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><path d="M6.5 6.8a8 8 0 1 0 11 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+        </span>
+        <span>Отключить VPN</span>
+      </div>
+
+      <div class="tray-item tray-check" id="tray-quiet">
+        <span class="tray-box" id="tray-quiet-box"></span>
+        <span>Свернуть вместо закрытия</span>
+      </div>
+
+      <div class="tray-sep"></div>
+
+      <div class="tray-item" id="tray-quit">
+        <span class="tray-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M16 8l4 4-4 4M20 12H9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </span>
+        <span>Выход</span>
+      </div>
+    </div>
+
+    <script type="module" src="/src/tray.ts"></script>
+  </body>
+</html>
