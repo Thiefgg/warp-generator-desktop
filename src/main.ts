@@ -11,6 +11,7 @@ interface HistoryItem { id: string; date: string; format: string; dns: string; m
 interface GenerateOptions {
   format: string; connection: string; dns: string; endpoint: string;
   excludeLan: boolean; ipv6: string; keepalive: number; mtu: number; customI1Domain: string | null;
+  profile: string | null;
 }
 
 interface SavedSettings {
@@ -41,7 +42,7 @@ const RANDOM_POOL: string[] = [
   "162.159.204.1:2408", "188.114.96.125:2408", "188.114.97.66:2408",
 ];
 
-const SELECT_IDS = ["config-format", "connection", "dns", "endpoint", "ipv6", "mtu", "keepalive"];
+const SELECT_IDS = ["config-format", "connection", "dns", "endpoint", "ipv6", "mtu", "keepalive", "profile"];
 
 const appWindow = getCurrentWindow();
 
@@ -142,6 +143,26 @@ function closeCustomSelect(select: HTMLElement) {
   select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "false");
 }
 
+function updateProfileVisibility() {
+  const field = document.querySelector<HTMLElement>("#profile-field");
+  if (!field) return;
+  const on = getCustomValue("connection") === "sakeen";
+  field.toggleAttribute("hidden", !on);
+  if (on) {
+    const val = getCustomValue("config-format");
+    if (val !== "sakeen") setCustomValue("config-format", "sakeen", "Sakeen");
+  }
+}
+
+function updateFormatFromConnection() {
+  const conn = getCustomValue("connection");
+  const fmt = getCustomValue("config-format");
+  if (conn === "sakeen" && fmt !== "sakeen") setCustomValue("config-format", "sakeen", "Sakeen");
+  if (conn === "wireguard" && fmt === "sakeen") setCustomValue("config-format", "wireguard", "WireGuard");
+  if (conn.startsWith("amneziawg") && fmt === "sakeen") setCustomValue("config-format", "amneziawg", "AmneziaWG");
+  updateProfileVisibility();
+}
+
 function updateEndpointVisibility() {
   if (!endpointCustomField) return;
   endpointCustomField.toggleAttribute("hidden", getCustomValue("endpoint") !== "custom");
@@ -187,6 +208,8 @@ function initCustomSelects() {
 
         if (id === "endpoint") updateEndpointVisibility();
         if (id === "mtu") updateMtuVisibility();
+        if (id === "connection") updateFormatFromConnection();
+        if (id === "config-format") updateProfileVisibility();
       });
     });
   });
@@ -207,7 +230,7 @@ function updatePreview() {
   const format = getCustomValue("config-format");
   const dns = getCustomValue("dns");
 
-  if (previewFormat) previewFormat.textContent = format === "amneziawg" ? "AmneziaWG" : "WireGuard";
+  if (previewFormat) previewFormat.textContent = format === "amneziawg" ? "AmneziaWG" : format === "sakeen" ? "Sakeen" : "WireGuard";
   if (previewDns) previewDns.textContent = dns || "1.1.1.1";
 }
 
@@ -262,6 +285,7 @@ function buildOptions(): GenerateOptions {
   const keepaliveRaw = parseInt(getCustomValue("keepalive"), 10);
   const keepalive = Number.isFinite(keepaliveRaw) ? keepaliveRaw : 0;
   const customI1Raw = (customI1Input?.value ?? "").trim().toLowerCase();
+  const profileRaw = (document.querySelector<HTMLInputElement>("#profile")?.value ?? "").trim();
 
   return {
     format: getCustomValue("config-format") || "wireguard",
@@ -273,19 +297,20 @@ function buildOptions(): GenerateOptions {
     keepalive,
     mtu: resolveMtu(),
     customI1Domain: customI1Raw.length > 0 ? customI1Raw : null,
+    profile: profileRaw.length > 0 ? profileRaw : null,
   };
 }
 
 function generateFileName(format: string): string {
   const id = Math.floor(Math.random() * 9_000_000) + 1_000_000;
-  return `${format === "amneziawg" ? "AMNEZIA" : "WARP"}${id}.conf`;
+  return `${format === "amneziawg" ? "AMNEZIA" : format === "sakeen" ? "SAKEEN" : "WARP"}${id}.conf`;
 }
 
 function createHistoryItem(config: string): HistoryItem {
   return {
     id: crypto.randomUUID(),
     date: new Date().toLocaleString("ru-RU"),
-    format: getCustomValue("config-format") === "amneziawg" ? "AmneziaWG" : "WireGuard",
+    format: getCustomValue("config-format") === "amneziawg" ? "AmneziaWG" : getCustomValue("config-format") === "sakeen" ? "Sakeen" : "WireGuard",
     dns: getCustomValue("dns") || "1.1.1.1",
     mode: "Все сайты",
     config,
@@ -985,5 +1010,6 @@ renderHistory();
 updatePreview();
 updateEndpointVisibility();
 updateMtuVisibility();
+updateProfileVisibility();
 updateVpnUI();
 void loadRepoStars();

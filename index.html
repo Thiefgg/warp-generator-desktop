@@ -102,6 +102,7 @@
                     <div class="custom-select-menu">
                       <button type="button" class="custom-option selected" data-value="wireguard">WireGuard</button>
                       <button type="button" class="custom-option" data-value="amneziawg">AmneziaWG</button>
+                      <button type="button" class="custom-option" data-value="sakeen">Sakeen</button>
                     </div>
                   </div>
                   <input type="hidden" id="config-format" value="wireguard" />
@@ -115,12 +116,29 @@
                       <span class="custom-select-arrow"></span>
                     </button>
                     <div class="custom-select-menu">
-                      <button type="button" class="custom-option selected" data-value="amneziawg15">AmneziaWG 1.5</button>
+                      <button type="button" class="custom-option" data-value="sakeen">Sakeen</button>
+                      <button type="button" class="custom-option" data-value="amneziawg15">AmneziaWG 1.5</button>
                       <button type="button" class="custom-option" data-value="amneziawg14">AmneziaWG 1.4</button>
                       <button type="button" class="custom-option" data-value="wireguard">WireGuard</button>
                     </div>
                   </div>
                   <input type="hidden" id="connection" value="amneziawg15" />
+                </div>
+
+                <div class="field custom-select-field" id="profile-field" hidden>
+                  <span>Профиль маскировки</span>
+                  <div class="custom-select" data-select-id="profile">
+                    <button class="custom-select-trigger" type="button" aria-expanded="false">
+                      <span class="custom-select-value">Standard</span>
+                      <span class="custom-select-arrow"></span>
+                    </button>
+                    <div class="custom-select-menu">
+                      <button type="button" class="custom-option selected" data-value="standard">Standard</button>
+                      <button type="button" class="custom-option" data-value="light">Light</button>
+                      <button type="button" class="custom-option" data-value="paranoid">Paranoid</button>
+                    </div>
+                  </div>
+                  <input type="hidden" id="profile" value="standard" />
                 </div>
 
                 <div class="field custom-select-field">
@@ -139,6 +157,17 @@
                       <button type="button" class="custom-option" data-value="dns.geohide.ru">dns.geohide.ru</button>
                       <button type="button" class="custom-option" data-value="dns.comss.one">dns.comss.one</button>
                       <button type="button" class="custom-option" data-value="dns.mafioznik.xyz">dns.mafioznik.xyz</button>
+                      <button type="button" class="custom-option" data-value="dns.aa-net.ru">dns.aa-net.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.ru">dns.ru</button>
+                      <button type="button" class="custom-option" data-value="skydns.ru">skydns.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.an2lines.ru">dns.an2lines.ru</button>
+                      <button type="button" class="custom-option" data-value="lumpdns.ru">lumpdns.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.wtfkteam.ru">dns.wtfkteam.ru</button>
+                      <button type="button" class="custom-option" data-value="dns.sb">dns.sb</button>
+                      <button type="button" class="custom-option" data-value="dns.adguard.com">dns.adguard.com</button>
+                      <button type="button" class="custom-option" data-value="dns.nextdns.io">dns.nextdns.io</button>
+                      <button type="button" class="custom-option" data-value="dns.nordvpn.com">dns.nordvpn.com</button>
+                      <button type="button" class="custom-option" data-value="dns.mullvad.net">dns.mullvad.net</button>
                     </div>
                   </div>
                   <input type="hidden" id="dns" value="1.1.1.1" />

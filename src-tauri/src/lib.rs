@@ -1,5 +1,6 @@
 mod i1_masks;
 mod quic;
+mod sakeen;
 mod vpn;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -21,6 +22,8 @@ pub struct GenerateOptions {
     pub keepalive: u32,
     pub mtu: u32,
     pub custom_i1_domain: Option<String>,
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -208,6 +211,53 @@ fn build_dns_line(provider: &str, include_ipv6: bool) -> String {
             }
         }
         "dns.mafioznik.xyz" => "103.27.157.38, 103.27.157.100".into(),
+        "dns.aa-net.ru" => "195.46.39.39, 94.130.180.225, 2a0e:fc0c:c000::1, 2a0e:fc44::2".into(),
+        "dns.ru" => {
+            if include_ipv6 {
+                "195.46.39.39, 64.126.88.14, 2a03:90c0:c000::1, 2a03:90c0:ec2::2".into()
+            } else {
+                "195.46.39.39, 64.126.88.14".into()
+            }
+        }
+        "skydns.ru" => "193.177.149.202, 193.177.149.203".into(),
+        "dns.an2lines.ru" => "195.46.39.39, 94.130.180.225".into(),
+        "lumpdns.ru" => "83.254.240.3, 94.130.180.225".into(),
+        "dns.wtfkteam.ru" => "62.141.232.53, 62.141.232.54".into(),
+        "dns.sb" => {
+            if include_ipv6 {
+                "185.222.222.222, 185.222.223.222, 2a0e:fc0b:9f0b::1, 2a0e:fc0b:9f0c::2".into()
+            } else {
+                "185.222.222.222, 185.222.223.222".into()
+            }
+        }
+        "dns.adguard.com" => {
+            if include_ipv6 {
+                "94.140.14.14, 94.140.15.15, 2a10:50c0::ad1:ff, 2a10:50c0::ad2:ff".into()
+            } else {
+                "94.140.14.14, 94.140.15.15".into()
+            }
+        }
+        "dns.nextdns.io" => {
+            if include_ipv6 {
+                "45.90.28.167, 45.90.30.167, 2a07:a8c0::12:3457, 2a07:a8c0::12:3458".into()
+            } else {
+                "45.90.28.167, 45.90.30.167".into()
+            }
+        }
+        "dns.nordvpn.com" => {
+            if include_ipv6 {
+                "103.86.96.100, 103.86.99.100, 2606:4700:100::7a36, 2606:4700:100::a09c".into()
+            } else {
+                "103.86.96.100, 103.86.99.100".into()
+            }
+        }
+        "dns.mullvad.net" => {
+            if include_ipv6 {
+                "194.242.2.2, 2a07:e340::2, 2a07:e340::9".into()
+            } else {
+                "194.242.2.2".into()
+            }
+        }
         _ => {
             if include_ipv6 {
                 "1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001".into()
@@ -237,6 +287,8 @@ fn build_allowed_ips(exclude_lan: bool, include_ipv6: bool) -> String {
 async fn build_config(options: GenerateOptions) -> Result<String, String> {
     let include_ipv6 = options.ipv6 == "enabled";
     let is_amnezia = options.connection.starts_with("amneziawg");
+    let is_sakeen = options.connection == "sakeen";
+    let profile = options.profile.as_deref().unwrap_or("standard");
 
     let (private_key, public_key) = generate_keypair()?;
 
@@ -262,6 +314,10 @@ async fn build_config(options: GenerateOptions) -> Result<String, String> {
     out.push_str(&format!("Address = {address}\n"));
     out.push_str(&format!("DNS = {dns}\n"));
     out.push_str(&format!("MTU = {}\n", options.mtu));
+
+    if is_sakeen {
+        out.push_str(&sakeen::build(&sakeen::pick_profile(profile))?);
+    }
 
     if is_amnezia {
         out.push_str("S1 = 0\n");
