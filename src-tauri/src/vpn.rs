@@ -117,7 +117,7 @@ fn sweep_routes() {
 }
 
 fn tunnel_iface() -> Option<String> {
-    let ps = "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | ForEach-Object { $_.Name } | Select-Object -First 1";
+    let ps = "Get-NetAdapter -Name 'usque' -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }";
 
     let out = cmd("powershell").args(["-NoProfile", "-Command", ps]).output().ok()?;
     let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -642,7 +642,7 @@ fn get_adapter_stats() -> (u64, u64) {
 
 pub fn cleanup_stale_adapter() {
     let _ = cmd("powershell")
-        .args(["-NoProfile", "-Command", "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | Remove-NetAdapter -Confirm:$false -ErrorAction SilentlyContinue"])
+        .args(["-NoProfile", "-Command", "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Remove-NetAdapter -Name 'usque' -Confirm:$false -ErrorAction SilentlyContinue"])
         .output();
 
     std::thread::sleep(std::time::Duration::from_millis(800));
@@ -813,7 +813,7 @@ pub fn vpn_emergency_reset() -> Result<String, String> {
     done.push("процессы приложения и туннеля завершены".into());
 
     let _ = cmd("powershell")
-        .args(["-NoProfile", "-Command", "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | Remove-NetAdapter -Confirm:$false -ErrorAction SilentlyContinue"])
+        .args(["-NoProfile", "-Command", "Remove-NetAdapter -Name 'usque' -Confirm:$false -ErrorAction SilentlyContinue"])
         .output();
     done.push("адаптер usque удалён".into());
 
