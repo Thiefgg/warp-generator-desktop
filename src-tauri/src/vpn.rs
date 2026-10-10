@@ -76,6 +76,119 @@ fn fill_h2_v6(cfg: &Path) {
     }
 }
 
+pub struct DnsBackup {
+    iface: String,
+    servers: Vec<String>,
+}
+
+fn dns_snapshot() -> Vec<DnsBackup> {
+    let out = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$a = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -ne 'usque' -and $_.ServerAddresses.Count -gt 0 }; foreach ($x in $a) { \"$($x.InterfaceAlias)|$($x.ServerAddresses -join ',')\" }"])
+        .output();
+
+    let Ok(o) = out else { return Vec::new() };
+
+    String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (iface, servers) = line.trim().split_once('|')?;
+            let list: Vec<String> = servers
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if list.is_empty() {
+                None
+            } else {
+                Some(DnsBackup { iface: iface.to_string(), servers: list })
+            }
+        })
+        .collect()
+}
+
+fn sweep_routes() {
+    let ps = "Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq 'usque' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '162.159.192.0/20' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue";
+
+    if let Ok(out) = cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+        if out.status.success() {
+            lg!("[vpn] маршруты прошлой сессии очищены");
+        }
+    }
+}
+
+fn has_dns(iface: &str) -> bool {
+    let alias = iface.replace('\'', "''");
+    let ps = format!("$a = Get-DnsClientServerAddress -InterfaceAlias '{alias}' -ErrorAction SilentlyContinue; if ($a -and $a.ServerAddresses.Count -gt 0) {{ 'yes' }}");
+
+    cmd("powershell")
+        .args(["-NoProfile", "-Command", &ps])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
+fn clear_dns() -> Vec<DnsBackup> {
+    let saved = dns_snapshot();
+
+    if saved.is_empty() {
+        return saved;
+    }
+
+    for d in &saved {
+        let alias = d.iface.replace('\'', "''");
+
+        let ps = format!("Set-DnsClientServerAddress -InterfaceAlias '{alias}' -ResetServerAddresses");
+
+        if let Ok(out) = cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                lg!("[vpn] ResetServerAddresses на {} не сработал: {err}", d.iface);
+            }
+        }
+
+        if has_dns(&d.iface) {
+            let _ = cmd("netsh")
+                .args(["interface", "ip", "set", "dns", &format!("name={}", d.iface), "static", "0.0.0.0"])
+                .output();
+        }
+
+        if has_dns(&d.iface) {
+            lg!("[vpn] DNS на {} снять не удалось, оставлен как есть", d.iface);
+        } else {
+            lg!("[vpn] DNS на {} снят, запросы только через туннель", d.iface);
+        }
+    }
+
+    let _ = cmd("ipconfig").arg("/flushdns").output();
+
+    saved
+}
+
+fn restore_dns(saved: &[DnsBackup]) {
+    if saved.is_empty() {
+        return;
+    }
+
+    for d in saved {
+        let list: Vec<String> = d.servers.iter().map(|s| format!("'{s}'")).collect();
+        let ps = format!(
+            "Set-DnsClientServerAddress -InterfaceAlias '{}' -ServerAddresses ({})",
+            d.iface.replace('\'', "''"),
+            list.join(",")
+        );
+
+        if let Ok(out) = cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+            if !out.status.success() {
+                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                lg!("[vpn] восстановление DNS на {} не удалось: {err}", d.iface);
+            }
+        }
+    }
+
+    let _ = cmd("ipconfig").arg("/flushdns").output();
+    lg!("[vpn] DNS физических адаптеров восстановлен");
+}
+
 fn has_ipv6_route() -> bool {
     let out = cmd("powershell")
         .args(["-NoProfile", "-Command", "$r = Get-NetRoute -AddressFamily IPv6 -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '::' }; if ($r) { 'yes' }"])
@@ -177,6 +290,7 @@ impl Default for VpnStatus {
 pub struct VpnManager {
     status: Arc<Mutex<VpnStatus>>,
     child: Arc<Mutex<Option<CommandChild>>>,
+    dns_backup: Arc<Mutex<Vec<DnsBackup>>>,
 }
 
 impl VpnManager {
@@ -184,6 +298,7 @@ impl VpnManager {
         Self {
             status: Arc::new(Mutex::new(VpnStatus::default())),
             child: Arc::new(Mutex::new(None)),
+            dns_backup: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -207,6 +322,8 @@ impl VpnManager {
         }
 
         cleanup_stale_adapter();
+        restore_dns(&dns_snapshot());
+        sweep_routes();
 
         let include_ipv6 = options.ipv6 == "enabled";
         let use_ipv6 = include_ipv6 && has_ipv6_route();
@@ -282,6 +399,7 @@ impl VpnManager {
         }
 
         let status = Arc::clone(&self.status);
+        let dns_backup = Arc::clone(&self.dns_backup);
 
         tauri::async_runtime::spawn(async move {
             let mut ready = false;
@@ -305,6 +423,10 @@ impl VpnManager {
                     if let Err(e) = setup_dns(dns_ref) {
                         lg!("[vpn] setup_dns warning: {e}");
                     }
+
+                    let saved = clear_dns();
+                    lg!("[vpn] DNS снят с {} адаптеров, запросы идут только через туннель", saved.len());
+                    *dns_backup.lock().unwrap() = saved;
 
                     let mut s = status.lock().unwrap();
                     s.running = true;
@@ -349,6 +471,8 @@ impl VpnManager {
                     }
                     CommandEvent::Terminated(_) => {
                         let _ = teardown_main_route();
+                        let saved: Vec<DnsBackup> = dns_backup.lock().unwrap().drain(..).collect();
+                        restore_dns(&saved);
                         let mut s = status.lock().unwrap();
                         s.running = false;
                         s.iface = None;
@@ -367,6 +491,12 @@ impl VpnManager {
 
     pub async fn disconnect(&self) -> Result<(), String> {
         let _ = teardown_main_route();
+
+        {
+            let mut guard = self.dns_backup.lock().unwrap();
+            let saved = std::mem::take(&mut *guard);
+            restore_dns(&saved);
+        }
 
         {
             let mut guard = self.child.lock().unwrap();
@@ -579,6 +709,48 @@ pub async fn vpn_connect(
     state: tauri::State<'_, VpnManager>,
 ) -> Result<(), String> {
     state.connect(&app, options).await
+}
+
+#[tauri::command]
+pub fn vpn_emergency_reset() -> Result<String, String> {
+    let mut done: Vec<String> = Vec::new();
+
+    for p in &["warp-generator-desktop", "usque"] {
+        cmd("taskkill")
+            .args(["/F", "/IM", &format!("{p}.exe"), "/T"])
+            .output()
+            .ok();
+    }
+    done.push("процессы приложения и туннеля завершены".into());
+
+    let _ = cmd("powershell")
+        .args(["-NoProfile", "-Command", "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | Remove-NetAdapter -Confirm:$false -ErrorAction SilentlyContinue"])
+        .output();
+    done.push("адаптер usque удалён".into());
+
+    let ps = "Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.InterfaceAlias -eq 'usque' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '162.159.192.0/20' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue";
+    let _ = cmd("powershell").args(["-NoProfile", "-Command", ps]).output();
+    done.push("маршруты туннеля сняты".into());
+
+    let _ = cmd("powershell")
+        .args(["-NoProfile", "-Command", "Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq 'usque' } | Reset-DnsClientServerAddress -ErrorAction SilentlyContinue"])
+        .output();
+    let _ = cmd("ipconfig").arg("/flushdns").output();
+    done.push("сброшены DNS и кэш резолвера".into());
+
+    let left = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -ne 'usque' }; if ($r) { 'ok' }"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("ok"))
+        .unwrap_or(false);
+
+    if left {
+        lg!("[vpn] аварийный сброс выполнен, маршрут по умолчанию на месте");
+        Ok(done.join("; "))
+    } else {
+        lg!("[vpn] аварийный сброс: маршрут по умолчанию не найден");
+        Err("Маршрут по умолчанию не восстановился. Перезагрузи сетевой адаптер в настройках Windows или выполни ipconfig /flushdns.".into())
+    }
 }
 
 #[tauri::command]
