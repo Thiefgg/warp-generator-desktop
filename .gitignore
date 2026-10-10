@@ -20,6 +20,7 @@ src-tauri/gen/schemas
 # Local files
 *.local
 src-tauri/binaries/config.json
+sync-installers.ps1
 
 # Editor directories and files
 .vscode/*
