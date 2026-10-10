@@ -46,6 +46,58 @@ fn sidecar_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Err("wintun.dll не найден".into())
 }
 
+fn fill_h2_v6(cfg: &Path) {
+    let Ok(raw) = std::fs::read_to_string(cfg) else {
+        return;
+    };
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return;
+    };
+
+    let has = v
+        .get("endpoint_h2_v6")
+        .and_then(|x| x.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+
+    if has {
+        return;
+    }
+
+    if let Some(v6) = v.get("endpoint_v6").and_then(|x| x.as_str()).map(String::from) {
+        if !v6.is_empty() && v6.contains(':') {
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("endpoint_h2_v6".into(), serde_json::Value::String(v6));
+                let out = serde_json::to_string_pretty(&v).unwrap_or_default();
+                let _ = std::fs::write(cfg, out);
+                lg!("[vpn] endpoint_h2_v6 заполнен из endpoint_v6");
+            }
+        }
+    }
+}
+
+fn has_ipv6_route() -> bool {
+    let out = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$r = Get-NetRoute -AddressFamily IPv6 -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '::' }; if ($r) { 'yes' }"])
+        .output();
+
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("yes"),
+        Err(_) => false,
+    }
+}
+
+fn cfg_endpoint(cfg: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(cfg).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let host = if v.get("endpoint_h2_v4").and_then(|x| x.as_str()).unwrap_or("").is_empty() {
+        v.get("endpoint_v4")?.as_str()?.to_string()
+    } else {
+        v.get("endpoint_h2_v4")?.as_str()?.to_string()
+    };
+    Some(format!("{host}:443"))
+}
+
 fn cfg_path() -> Result<PathBuf, String> {
     let d = PathBuf::from(std::env::var("APPDATA").map_err(|e| e.to_string())?)
         .join("WARP Generator");
@@ -88,6 +140,16 @@ async fn usque_register(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String
 }
 
 #[derive(Clone, serde::Serialize)]
+pub struct Applied {
+    pub dns: String,
+    pub mtu: u32,
+    pub transport: String,
+    pub keepalive: String,
+    pub ipv6: bool,
+    pub profile: String,
+}
+
+#[derive(Clone, serde::Serialize)]
 pub struct VpnStatus {
     pub running: bool,
     pub iface: Option<String>,
@@ -95,6 +157,7 @@ pub struct VpnStatus {
     pub rx_bytes: u64,
     pub tx_bytes: u64,
     pub connected_since: Option<u64>,
+    pub applied: Option<Applied>,
 }
 
 impl Default for VpnStatus {
@@ -106,6 +169,7 @@ impl Default for VpnStatus {
             rx_bytes: 0,
             tx_bytes: 0,
             connected_since: None,
+            applied: None,
         }
     }
 }
@@ -145,9 +209,20 @@ impl VpnManager {
         cleanup_stale_adapter();
 
         let include_ipv6 = options.ipv6 == "enabled";
+        let use_ipv6 = include_ipv6 && has_ipv6_route();
+        if include_ipv6 && !use_ipv6 {
+            lg!("[vpn] IPv6 включён, но маршрута ::/0 нет — транспорт через IPv4");
+        }
         let dns = crate::build_dns_line(&options.dns, include_ipv6);
         let mtu = if options.mtu == 0 { 1280 } else { options.mtu };
-        let profile = options.profile.as_deref().unwrap_or("standard");
+        let profile = options.profile.as_deref().unwrap_or("standard").to_string();
+        let keepalive = if profile == "paranoid" {
+            60
+        } else {
+            options.keepalive
+        };
+        let transport = if profile == "standard" { "HTTP/3 (QUIC)" } else { "HTTP/2 (TCP)" };
+        let endpoint_label;
 
         if let Err(e) = setup_exclusion_route() {
             lg!("[vpn] exclusion route warning: {e}");
@@ -159,6 +234,12 @@ impl VpnManager {
         let cfg = cfg_path()?;
         if !cfg.exists() {
             usque_register(app, &cfg).await?;
+        }
+
+        endpoint_label = cfg_endpoint(&cfg).unwrap_or_else(|| "162.159.198.2:443".into());
+
+        if use_ipv6 && profile != "standard" {
+            fill_h2_v6(&cfg);
         }
 
         let shell = app.shell();
@@ -177,10 +258,15 @@ impl VpnManager {
         if profile != "standard" {
             args.push("--http2".into());
         }
-        if profile == "paranoid" {
-            args.push("-k".into());
-            args.push("60s".into());
+        if use_ipv6 {
+            args.push("-6".into());
         }
+        if keepalive > 0 {
+            args.push("-k".into());
+            args.push(format!("{keepalive}s"));
+        }
+
+        lg!("[vpn] {} | mtu {mtu} | keepalive {keepalive}s | ipv6 {use_ipv6}", transport);
 
         let (mut rx, child) = shell
             .sidecar("usque")
@@ -223,7 +309,19 @@ impl VpnManager {
                     let mut s = status.lock().unwrap();
                     s.running = true;
                     s.iface = Some("usque".into());
-                    s.endpoint = Some("162.159.198.2:443".into());
+                    s.endpoint = Some(endpoint_label.clone());
+                    s.applied = Some(Applied {
+                        dns: dns_ref.to_string(),
+                        mtu,
+                        transport: transport.to_string(),
+                        keepalive: if keepalive > 0 {
+                            format!("{keepalive}s")
+                        } else {
+                            "по умолчанию (30s)".into()
+                        },
+                        ipv6: use_ipv6,
+                        profile: profile.to_string(),
+                    });
                     s.connected_since = Some(
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
