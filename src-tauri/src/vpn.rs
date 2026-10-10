@@ -306,6 +306,23 @@ async fn usque_register(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String
     Err(last)
 }
 
+fn translate_tunnel_error(raw: &str) -> Option<String> {
+    let lower = raw.to_lowercase();
+
+    if lower.contains("failed to create tun device")
+        || lower.contains("are you root/administrator")
+        || lower.contains("failed to set ipv4 address")
+    {
+        return Some(
+            "Не удалось создать туннельный адаптер — нет прав или конфликт с другим VPN.\n\n\
+             Закрой полностью AmneziaWG и другие VPN-клиенты, перезагрузи компьютер и запусти WARP Generator от имени администратора."
+                .into(),
+        );
+    }
+
+    None
+}
+
 async fn register_once(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String> {
     lg!("[vpn] регистрация нового аккаунта usque");
     let (mut rx, _ch) = app
@@ -376,6 +393,7 @@ pub struct VpnManager {
     status: Arc<Mutex<VpnStatus>>,
     child: Arc<Mutex<Option<CommandChild>>>,
     dns_backup: Arc<Mutex<Vec<DnsBackup>>>,
+    tunnel_fail: Arc<Mutex<Option<String>>>,
 }
 
 impl VpnManager {
@@ -384,6 +402,7 @@ impl VpnManager {
             status: Arc::new(Mutex::new(VpnStatus::default())),
             child: Arc::new(Mutex::new(None)),
             dns_backup: Arc::new(Mutex::new(Vec::new())),
+            tunnel_fail: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -488,9 +507,11 @@ impl VpnManager {
 
         let status = Arc::clone(&self.status);
         let dns_backup = Arc::clone(&self.dns_backup);
+        let tunnel_fail = Arc::clone(&self.tunnel_fail);
 
         tauri::async_runtime::spawn(async move {
             let mut ready = false;
+            let mut tunnel_error: Option<String> = None;
 
             let handle_line = |line: &str, status: &Arc<Mutex<VpnStatus>>, ready: &mut bool| {
                 if !*ready && line.contains("Connected to MASQUE server") {
@@ -554,6 +575,9 @@ impl VpnManager {
                         let text = String::from_utf8_lossy(&bytes);
                         for line in text.lines() {
                             lg!("[usque:err] {line}");
+                            if let Some(msg) = translate_tunnel_error(line) {
+                                tunnel_error = Some(msg);
+                            }
                             handle_line(line, &status, &mut ready);
                         }
                     }
@@ -561,6 +585,9 @@ impl VpnManager {
                         let _ = teardown_main_route();
                         let saved: Vec<DnsBackup> = dns_backup.lock().unwrap().drain(..).collect();
                         restore_dns(&saved);
+                        if let Some(e) = tunnel_error.take() {
+                            *tunnel_fail.lock().unwrap() = Some(e);
+                        }
                         let mut s = status.lock().unwrap();
                         s.running = false;
                         s.iface = None;
@@ -845,6 +872,11 @@ pub fn vpn_emergency_reset() -> Result<String, String> {
 #[tauri::command]
 pub async fn vpn_disconnect(state: tauri::State<'_, VpnManager>) -> Result<(), String> {
     state.disconnect().await
+}
+
+#[tauri::command]
+pub fn vpn_take_error(state: tauri::State<'_, VpnManager>) -> Option<String> {
+    state.tunnel_fail.lock().unwrap().take()
 }
 
 #[tauri::command]

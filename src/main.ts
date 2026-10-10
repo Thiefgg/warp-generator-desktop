@@ -834,6 +834,19 @@ function startVpnPoll() {
         return;
       }
 
+      if (!status.running && vpnState === "connecting") {
+        try {
+          const reason = await invoke<string | null>("vpn_take_error");
+          if (reason) {
+            vpnState = "disconnected";
+            updateVpnUI();
+            stopVpnPoll();
+            showErrorModal("Не удалось подключиться", "Ошибка туннеля", reason);
+            return;
+          }
+        } catch {}
+      }
+
       if (status.running) {
         if (vpnIfaceEl) vpnIfaceEl.textContent = status.iface || "usque";
         if (vpnEndpointEl) vpnEndpointEl.textContent = status.endpoint || "—";

@@ -589,6 +589,7 @@ pub fn run() {
             vpn::vpn_disconnect,
             vpn::vpn_emergency_reset,
             vpn::vpn_get_status,
+            vpn::vpn_take_error,
             vpn::app_hide,
             vpn::app_quit,
             tray_show_main,
