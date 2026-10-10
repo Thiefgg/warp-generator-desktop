@@ -1,6 +1,6 @@
 [package]
 name = "warp-generator-desktop"
-version = "0.2.1"
+version = "0.2.2"
 description = "Desktop application for generating Cloudflare WARP and AmneziaWG configurations"
 authors = ["Sakeenkok <https://github.com/Thiefgg>"]
 edition = "2021"
