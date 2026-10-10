@@ -714,7 +714,8 @@ async function showVersion() {
 
   try {
     el.textContent = `v${await getVersion()}`;
-  } catch {
+  } catch (err) {
+    console.error("getVersion failed:", err);
     el.textContent = "—";
   }
 }

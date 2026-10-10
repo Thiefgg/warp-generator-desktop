@@ -17,6 +17,7 @@
     "core:window:allow-set-size",
     "core:event:default",
     "core:app:allow-default-window-icon",
+    "core:app:allow-version",
     "core:tray:default",
     "opener:default",
     "dialog:default",
