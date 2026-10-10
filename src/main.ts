@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { save } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 
 type PageName = "generator" | "vpn" | "ip" | "history" | "settings";
 
@@ -707,6 +708,17 @@ async function loadIpInfo() {
   }
 }
 
+async function showVersion() {
+  const el = document.querySelector<HTMLElement>("#app-version");
+  if (!el) return;
+
+  try {
+    el.textContent = `v${await getVersion()}`;
+  } catch {
+    el.textContent = "—";
+  }
+}
+
 async function loadRepoStars() {
   const badge = document.querySelector<HTMLElement>("#repo-stars");
   if (!badge) return;
@@ -1137,4 +1149,5 @@ updatePreview();
 updateEndpointVisibility();
 updateMtuVisibility();
 updateVpnUI();
+void showVersion();
 void loadRepoStars();

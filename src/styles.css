@@ -627,3 +627,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 .secondary-button.danger:disabled { opacity: .55; cursor: default; }
+
+.setting-value {
+  font-size: 13px; font-weight: 600; color: var(--text-soft);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
