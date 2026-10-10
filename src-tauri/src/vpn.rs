@@ -218,7 +218,77 @@ fn cfg_path() -> Result<PathBuf, String> {
     Ok(d.join("usque.json"))
 }
 
+fn api_reachable() -> Option<String> {
+    let out = cmd("powershell")
+        .args(["-NoProfile", "-Command", "$t = Test-NetConnection -ComputerName api.cloudflareclient.com -Port 443 -WarningAction SilentlyContinue -InformationLevel Quiet; if ($t) { 'ok' }"])
+        .output()
+        .ok()?;
+
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_lowercase();
+
+    if s.contains("ok") {
+        None
+    } else {
+        Some("Проверка связи с api.cloudflareclient.com не пройдена: порт 443 недоступен.".into())
+    }
+}
+
+fn translate_usque_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+
+    if lower.contains("tls handshake timeout")
+        || lower.contains("failed to register")
+        || lower.contains("connection refused")
+        || lower.contains("no such host")
+    {
+        return "Cloudflare не отвечает. Скорее всего, api.cloudflareclient.com заблокирован твоим провайдером — это известная проблема на части сетей. Регистрация нового аккаунта не проходит. Попробуй другой DNS или другую сеть.".into();
+    }
+
+    if lower.contains("timeout") || lower.contains("deadline exceeded") {
+        return "Превышено время ожидания ответа от Cloudflare. Проверь подключение к интернету.".into();
+    }
+
+    if lower.contains("access denied") || lower.contains("permission") {
+        return "Нет прав на изменение сети. Запусти приложение от имени администратора.".into();
+    }
+
+    let first = raw
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.contains("Config file not found"))
+        .unwrap_or("неизвестная ошибка");
+
+    format!("Регистрация не удалась: {first}")
+}
+
 async fn usque_register(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String> {
+    let mut last = String::new();
+
+    for attempt in 1..=3u32 {
+        if attempt > 1 {
+            lg!("[vpn] попытка регистрации {attempt} из 3");
+            tokio::time::sleep(std::time::Duration::from_secs(3u64 * attempt as u64)).await;
+        }
+
+        match register_once(app, cfg).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = e;
+                let soft = last.to_lowercase().contains("tls handshake timeout")
+                    || last.to_lowercase().contains("таймаут")
+                    || last.to_lowercase().contains("превышено время");
+
+                if !soft {
+                    break;
+                }
+            }
+        }
+    }
+
+    Err(last)
+}
+
+async fn register_once(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String> {
     lg!("[vpn] регистрация нового аккаунта usque");
     let (mut rx, _ch) = app
         .shell()
@@ -239,11 +309,8 @@ async fn usque_register(app: &tauri::AppHandle, cfg: &Path) -> Result<(), String
                     lg!("[vpn] регистрация успешна");
                     Ok(())
                 } else {
-                    Err(if err.trim().is_empty() {
-                        format!("регистрация провалилась (код {code})")
-                    } else {
-                        err.trim().to_string()
-                    })
+                    lg!("[vpn] регистрация провалилась, код {code}: {}", err.trim());
+                    Err(translate_usque_error(&err))
                 };
             }
             _ => {}
@@ -350,6 +417,9 @@ impl VpnManager {
 
         let cfg = cfg_path()?;
         if !cfg.exists() {
+            if let Some(problem) = api_reachable() {
+                lg!("[vpn] предварительная проверка: {problem}");
+            }
             usque_register(app, &cfg).await?;
         }
 
