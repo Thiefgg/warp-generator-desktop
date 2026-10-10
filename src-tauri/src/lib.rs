@@ -587,6 +587,7 @@ pub fn run() {
             open_in_amnezia,
             vpn::vpn_connect,
             vpn::vpn_disconnect,
+            vpn::vpn_emergency_reset,
             vpn::vpn_get_status,
             vpn::app_hide,
             vpn::app_quit,
