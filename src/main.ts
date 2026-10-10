@@ -155,10 +155,31 @@ function openCustomSelect(select: HTMLElement) {
   closeAllCustomSelects(select);
   select.classList.add("open");
   select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "true");
+  positionMenu(select);
+}
+
+function positionMenu(select: HTMLElement) {
+  const menu = select.querySelector<HTMLElement>(".custom-select-menu");
+  const trigger = select.querySelector<HTMLElement>(".custom-select-trigger");
+  if (!menu || !trigger) return;
+
+  select.classList.remove("up");
+  menu.style.maxHeight = "";
+
+  const t = trigger.getBoundingClientRect();
+  const below = window.innerHeight - t.bottom;
+
+  if (below < 250 && t.top > below) {
+    select.classList.add("up");
+  }
+
+  const room = select.classList.contains("up") ? t.top : below;
+  menu.style.maxHeight = `${Math.max(150, Math.min(232, room - 20))}px`;
 }
 
 function closeCustomSelect(select: HTMLElement) {
   select.classList.remove("open");
+  select.classList.remove("up");
   select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "false");
 }
 
@@ -896,6 +917,31 @@ autoHistory?.addEventListener("change", saveSettings);
 trayEnabled?.addEventListener("change", saveSettings);
 trayKeepVpn?.addEventListener("change", saveSettings);
 trayMenu?.addEventListener("change", saveSettings);
+
+document.querySelector<HTMLButtonElement>("#emergency-reset")?.addEventListener("click", async () => {
+  const btn = document.querySelector<HTMLButtonElement>("#emergency-reset");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Сбрасываю...";
+  }
+
+  try {
+    const done = await invoke<string>("vpn_emergency_reset");
+    vpnState = "disconnected";
+    vpnStartedAt = 0;
+    stopVpnPoll();
+    updateVpnUI();
+    showErrorModal("Сеть восстановлена", "Аварийный сброс выполнен", done);
+  } catch (err) {
+    const raw = typeof err === "string" ? err : "Неизвестная ошибка";
+    showErrorModal("Не удалось восстановить", "Проверь маршруты", raw);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Сбросить сеть";
+    }
+  }
+});
 excludeLan?.addEventListener("change", saveSettings);
 endpointCustomInput?.addEventListener("input", saveSettings);
 
