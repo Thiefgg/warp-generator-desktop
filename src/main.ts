@@ -45,6 +45,11 @@ const RANDOM_POOL: string[] = [
 
 const SELECT_IDS = ["config-format", "connection", "dns", "endpoint", "ipv6", "mtu", "keepalive", "profile"];
 
+const FILE_PREFIX: Record<string, string> = {
+  sakeen: "SAKEEN",
+  amneziawg: "AMNEZIA",
+};
+
 const appWindow = getCurrentWindow();
 
 const navItems = document.querySelectorAll<HTMLButtonElement>(".nav-item");
@@ -102,6 +107,11 @@ const vpnRxEl = document.querySelector<HTMLElement>("#vpn-rx");
 const vpnTxEl = document.querySelector<HTMLElement>("#vpn-tx");
 const vpnIfaceEl = document.querySelector<HTMLElement>("#vpn-iface");
 const vpnEndpointEl = document.querySelector<HTMLElement>("#vpn-endpoint");
+const vpnMtuEl = document.querySelector<HTMLElement>("#vpn-mtu");
+const vpnProtoEl = document.querySelector<HTMLElement>("#vpn-proto");
+const vpnKeepaliveEl = document.querySelector<HTMLElement>("#vpn-keepalive");
+const vpnDnsEl = document.querySelector<HTMLElement>("#vpn-dns");
+const vpnProfileEl = document.querySelector<HTMLElement>("#vpn-profile");
 const vpnPanel = document.querySelector<HTMLElement>("#vpn-panel");
 
 let appHistory: HistoryItem[] = loadHistory();
@@ -110,23 +120,29 @@ let currentFileName = "";
 let ipLoading = false;
 let vpnState: "disconnected" | "connecting" | "connected" = "disconnected";
 let vpnStartTime = 0;
+let vpnStartedAt = 0;
+const CONNECT_TIMEOUT = 30000;
 
 function getCustomValue(id: string): string {
   return document.querySelector<HTMLInputElement>(`#${id}`)?.value ?? "";
 }
 
-function setCustomValue(id: string, value: string, label: string) {
+function setCustomValue(id: string, value: string) {
   const input = document.querySelector<HTMLInputElement>(`#${id}`);
   const select = document.querySelector<HTMLElement>(`.custom-select[data-select-id="${id}"]`);
   if (!input || !select) return;
 
   input.value = value;
-  const valueEl = select.querySelector<HTMLElement>(".custom-select-value");
-  if (valueEl) valueEl.textContent = label;
+  let label = value;
 
   select.querySelectorAll<HTMLButtonElement>(".custom-option").forEach((opt) => {
-    opt.classList.toggle("selected", opt.dataset.value === value);
+    const on = opt.dataset.value === value;
+    opt.classList.toggle("selected", on);
+    if (on) label = opt.textContent?.trim() || value;
   });
+
+  const valueEl = select.querySelector<HTMLElement>(".custom-select-value");
+  if (valueEl) valueEl.textContent = label;
 }
 
 function closeAllCustomSelects(except?: HTMLElement) {
@@ -146,24 +162,33 @@ function closeCustomSelect(select: HTMLElement) {
   select.querySelector<HTMLButtonElement>(".custom-select-trigger")?.setAttribute("aria-expanded", "false");
 }
 
-function updateProfileVisibility() {
-  const field = document.querySelector<HTMLElement>("#profile-field");
-  if (!field) return;
-  const on = getCustomValue("connection") === "sakeen";
-  field.toggleAttribute("hidden", !on);
-  if (on) {
-    const val = getCustomValue("config-format");
-    if (val !== "sakeen") setCustomValue("config-format", "sakeen", "Sakeen");
-  }
-}
+const FORMAT_BY_CONNECTION: Record<string, string> = {
+  sakeen: "sakeen",
+  amneziawg15: "amneziawg",
+  amneziawg14: "amneziawg",
+  wireguard: "wireguard",
+};
 
-function updateFormatFromConnection() {
-  const conn = getCustomValue("connection");
-  const fmt = getCustomValue("config-format");
-  if (conn === "sakeen" && fmt !== "sakeen") setCustomValue("config-format", "sakeen", "Sakeen");
-  if (conn === "wireguard" && fmt === "sakeen") setCustomValue("config-format", "wireguard", "WireGuard");
-  if (conn.startsWith("amneziawg") && fmt === "sakeen") setCustomValue("config-format", "amneziawg", "AmneziaWG");
-  updateProfileVisibility();
+const CONNECTION_BY_FORMAT: Record<string, string> = {
+  sakeen: "sakeen",
+  amneziawg: "amneziawg15",
+  wireguard: "wireguard",
+};
+
+function syncFormats(source: "connection" | "format") {
+  const conn = getCustomValue("connection") || "amneziawg15";
+  const fmt = getCustomValue("config-format") || "wireguard";
+
+  const nextFmt = source === "connection" ? (FORMAT_BY_CONNECTION[conn] ?? "wireguard") : fmt;
+  const nextConn = source === "format" ? (CONNECTION_BY_FORMAT[nextFmt] ?? "amneziawg15") : conn;
+
+  setCustomValue("config-format", nextFmt);
+  setCustomValue("connection", nextConn);
+
+  const field = document.querySelector<HTMLElement>("#profile-field");
+  field?.toggleAttribute("hidden", nextFmt !== "sakeen");
+
+  updatePreview();
 }
 
 function updateEndpointVisibility() {
@@ -204,15 +229,15 @@ function initCustomSelects() {
         const value = option.dataset.value;
         if (!value) return;
 
-        setCustomValue(id, value, option.textContent?.trim() ?? "");
+        setCustomValue(id, value);
         closeCustomSelect(select);
-        updatePreview();
         saveSettings();
 
         if (id === "endpoint") updateEndpointVisibility();
         if (id === "mtu") updateMtuVisibility();
-        if (id === "connection") updateFormatFromConnection();
-        if (id === "config-format") updateProfileVisibility();
+        if (id === "connection") syncFormats("connection");
+        if (id === "config-format") syncFormats("format");
+        else updatePreview();
       });
     });
   });
@@ -229,11 +254,14 @@ function switchPage(pageName: PageName) {
   pages.forEach((page) => page.classList.toggle("active", page.dataset.pageContent === pageName));
 }
 
+function selectLabel(id: string): string {
+  return document.querySelector<HTMLElement>(`.custom-select[data-select-id="${id}"] .custom-select-value`)?.textContent?.trim() ?? "";
+}
+
 function updatePreview() {
-  const format = getCustomValue("config-format");
   const dns = getCustomValue("dns");
 
-  if (previewFormat) previewFormat.textContent = format === "amneziawg" ? "AmneziaWG" : format === "sakeen" ? "Sakeen" : "WireGuard";
+  if (previewFormat) previewFormat.textContent = selectLabel("config-format") || "WireGuard";
   if (previewDns) previewDns.textContent = dns || "1.1.1.1";
 }
 
@@ -306,14 +334,14 @@ function buildOptions(): GenerateOptions {
 
 function generateFileName(format: string): string {
   const id = Math.floor(Math.random() * 9_000_000) + 1_000_000;
-  return `${format === "amneziawg" ? "AMNEZIA" : format === "sakeen" ? "SAKEEN" : "WARP"}${id}.conf`;
+  return `${FILE_PREFIX[format] ?? "WARP"}${id}.conf`;
 }
 
 function createHistoryItem(config: string): HistoryItem {
   return {
     id: crypto.randomUUID(),
     date: new Date().toLocaleString("ru-RU"),
-    format: getCustomValue("config-format") === "amneziawg" ? "AmneziaWG" : getCustomValue("config-format") === "sakeen" ? "Sakeen" : "WireGuard",
+    format: selectLabel("config-format") || "WireGuard",
     dns: getCustomValue("dns") || "1.1.1.1",
     mode: "Все сайты",
     config,
@@ -366,11 +394,7 @@ function applySettings() {
   SELECT_IDS.forEach((id) => {
     const value = saved.selects[id];
     if (!value) return;
-
-    const option = document.querySelector<HTMLButtonElement>(
-      `.custom-select[data-select-id="${id}"] .custom-option[data-value="${value}"]`,
-    );
-    setCustomValue(id, value, option?.textContent?.trim() ?? value);
+    setCustomValue(id, value);
   });
 
   if (typeof saved.autoHistory === "boolean" && autoHistory) autoHistory.checked = saved.autoHistory;
@@ -710,7 +734,12 @@ function updateVpnUI() {
     vpnStatsEl.hidden = true;
     vpnPanel?.classList.remove("connected");
     if (vpnIfaceEl) vpnIfaceEl.textContent = "—";
-    if (vpnEndpointEl) vpnEndpointEl.textContent = "—";
+if (vpnEndpointEl) vpnEndpointEl.textContent = "—";
+    if (vpnMtuEl) vpnMtuEl.textContent = "—";
+    if (vpnProtoEl) vpnProtoEl.textContent = "—";
+    if (vpnKeepaliveEl) vpnKeepaliveEl.textContent = "—";
+    if (vpnDnsEl) vpnDnsEl.textContent = "—";
+    if (vpnProfileEl) vpnProfileEl.textContent = "—";
     if (vpnStartTime) { vpnStartTime = 0; stopVpnPoll(); }
   } else if (vpnState === "connecting") {
     vpnStatusText.textContent = "Подключение...";
@@ -751,6 +780,10 @@ function startVpnPoll() {
         rx_bytes: number;
         tx_bytes: number;
         connected_since: number | null;
+        applied: {
+          dns: string; mtu: number; transport: string;
+          keepalive: string; ipv6: boolean; profile: string;
+        } | null;
       }>("vpn_get_status");
 
       if (status.running && vpnState !== "connected") {
@@ -771,11 +804,31 @@ function startVpnPoll() {
         return;
       }
 
+      if (!status.running && vpnState === "connecting" && vpnStartedAt
+          && Date.now() - vpnStartedAt > CONNECT_TIMEOUT) {
+        vpnState = "disconnected";
+        updateVpnUI();
+        stopVpnPoll();
+        showErrorModal("Не удалось подключиться", "Туннель не поднялся", "Подключение не установилось за отведённое время. Проверь лог в %TEMP%\\warp-gen.log.");
+        return;
+      }
+
       if (status.running) {
         if (vpnIfaceEl) vpnIfaceEl.textContent = status.iface || "usque";
         if (vpnEndpointEl) vpnEndpointEl.textContent = status.endpoint || "—";
         if (vpnRxEl) vpnRxEl.textContent = formatBytes(status.rx_bytes);
         if (vpnTxEl) vpnTxEl.textContent = formatBytes(status.tx_bytes);
+
+        const a = status.applied;
+        if (vpnMtuEl) vpnMtuEl.textContent = a ? String(a.mtu) : "—";
+        if (vpnProtoEl) vpnProtoEl.textContent = a?.transport ?? "—";
+        if (vpnKeepaliveEl) vpnKeepaliveEl.textContent = a?.keepalive ?? "—";
+        if (vpnDnsEl) vpnDnsEl.textContent = a?.dns ?? "—";
+        if (vpnProfileEl) {
+          vpnProfileEl.textContent = a
+            ? `${a.profile}${a.ipv6 ? " · IPv6" : ""}`
+            : "—";
+        }
 
         const elapsed = Math.floor((Date.now() - vpnStartTime) / 1000);
         if (vpnTimeEl) vpnTimeEl.textContent = formatTime(elapsed);
@@ -787,6 +840,7 @@ function startVpnPoll() {
 vpnConnectBtn?.addEventListener("click", async () => {
   if (vpnState === "disconnected") {
     vpnState = "connecting";
+    vpnStartedAt = Date.now();
     updateVpnUI();
 
     const options = buildOptions();
@@ -1019,9 +1073,9 @@ document.querySelectorAll<HTMLAnchorElement>(".footer a, .project-link").forEach
 initCustomSelects();
 applySettings();
 renderHistory();
+syncFormats("format");
 updatePreview();
 updateEndpointVisibility();
 updateMtuVisibility();
-updateProfileVisibility();
 updateVpnUI();
 void loadRepoStars();
