@@ -83,7 +83,7 @@ pub struct DnsBackup {
 
 fn dns_snapshot() -> Vec<DnsBackup> {
     let out = cmd("powershell")
-        .args(["-NoProfile", "-Command", "$a = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -ne 'usque' -and $_.ServerAddresses.Count -gt 0 }; foreach ($x in $a) { \"$($x.InterfaceAlias)|$($x.ServerAddresses -join ',')\" }"])
+        .args(["-NoProfile", "-Command", &format!("$a = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ $_.InterfaceAlias -ne '{}' -and $_.ServerAddresses.Count -gt 0 }}; foreach ($x in $a) {{ \"$($x.InterfaceAlias)|$($x.ServerAddresses -join ',')\" }}", tunnel_iface().unwrap_or_else(|| "usque".into()))])
         .output();
 
     let Ok(o) = out else { return Vec::new() };
@@ -107,13 +107,31 @@ fn dns_snapshot() -> Vec<DnsBackup> {
 }
 
 fn sweep_routes() {
-    let ps = "Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq 'usque' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '162.159.192.0/20' } | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue";
+    let ps = format!("Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ {} }} | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue; Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ $_.DestinationPrefix -eq '162.159.192.0/20' }} | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue", tunnel_filter());
 
-    if let Ok(out) = cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(out) = cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         if out.status.success() {
             lg!("[vpn] маршруты прошлой сессии очищены");
         }
     }
+}
+
+fn tunnel_iface() -> Option<String> {
+    let ps = "Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | ForEach-Object { $_.Name } | Select-Object -First 1";
+
+    let out = cmd("powershell").args(["-NoProfile", "-Command", ps]).output().ok()?;
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+fn tunnel_filter() -> String {
+    let n = tunnel_iface().unwrap_or_else(|| "usque".into());
+    format!("$_.InterfaceAlias -eq '{n}'")
 }
 
 fn has_dns(iface: &str) -> bool {
@@ -500,7 +518,7 @@ impl VpnManager {
 
                     let mut s = status.lock().unwrap();
                     s.running = true;
-                    s.iface = Some("usque".into());
+                    s.iface = tunnel_iface().or_else(|| Some("usque".into()));
                     s.endpoint = Some(endpoint_label.clone());
                     s.applied = Some(Applied {
                         dns: dns_ref.to_string(),
@@ -605,7 +623,7 @@ impl VpnManager {
 
 fn get_adapter_stats() -> (u64, u64) {
     let output = cmd("powershell")
-        .args(["-NoProfile", "-Command", "$s = Get-NetAdapterStatistics -Name 'usque' -ErrorAction SilentlyContinue; if ($s) { \"$($s.ReceivedBytes)|$($s.SentBytes)\" }"])
+        .args(["-NoProfile", "-Command", &format!("$s = Get-NetAdapterStatistics -Name '{}' -ErrorAction SilentlyContinue; if ($s) {{ \"$($s.ReceivedBytes)|$($s.SentBytes)\" }}", tunnel_iface().unwrap_or_else(|| "usque".into()))])
         .output();
 
     if let Ok(out) = output {
@@ -624,7 +642,7 @@ fn get_adapter_stats() -> (u64, u64) {
 
 pub fn cleanup_stale_adapter() {
     let _ = cmd("powershell")
-        .args(["-NoProfile", "-Command", "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Remove-NetAdapter -Name 'usque' -Confirm:$false -ErrorAction SilentlyContinue"])
+        .args(["-NoProfile", "-Command", "Stop-Process -Name usque -Force -ErrorAction SilentlyContinue; Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'usque' -or $_.InterfaceDescription -like '*Wintun*' } | Remove-NetAdapter -Confirm:$false -ErrorAction SilentlyContinue"])
         .output();
 
     std::thread::sleep(std::time::Duration::from_millis(800));
@@ -667,7 +685,7 @@ fn get_iface_idx(name: &str) -> Option<u32> {
 
 fn get_default_gateway_and_idx() -> Option<(String, u32)> {
     let output = cmd("powershell")
-        .args(["-NoProfile", "-Command", "$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne '0.0.0.0' -and $_.InterfaceAlias -ne 'usque' } | Sort-Object RouteMetric | Select-Object -First 1; if ($r) { \"$($r.NextHop)|$($r.InterfaceIndex)\" }"])
+        .args(["-NoProfile", "-Command", &format!("$r = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object {{ $_.NextHop -ne '0.0.0.0' -and $_.InterfaceAlias -ne '{}' }} | Sort-Object RouteMetric | Select-Object -First 1; if ($r) {{ \"$($r.NextHop)|$($r.InterfaceIndex)\" }}", tunnel_iface().unwrap_or_else(|| "usque".into()))])
         .output()
         .ok()?;
 
@@ -709,7 +727,8 @@ fn setup_exclusion_route() -> Result<(), String> {
 }
 
 fn setup_main_route() -> Result<(), String> {
-    let idx = get_iface_idx("usque").ok_or_else(|| "usque interface not found".to_string())?;
+    let name = tunnel_iface().ok_or_else(|| "туннельный адаптер не найден".to_string())?;
+    let idx = get_iface_idx(&name).ok_or_else(|| format!("индекс интерфейса {name} не найден"))?;
 
     let output = cmd("route")
         .args(["add", "0.0.0.0", "mask", "0.0.0.0", "0.0.0.0", "metric", "1", "if", &idx.to_string()])
@@ -728,7 +747,7 @@ fn setup_main_route() -> Result<(), String> {
 }
 
 fn teardown_main_route() -> Result<(), String> {
-    if let Some(idx) = get_iface_idx("usque") {
+    if let Some(idx) = tunnel_iface().and_then(|n| get_iface_idx(&n)) {
         let _ = cmd("route")
             .args(["delete", "0.0.0.0", "mask", "0.0.0.0", "if", &idx.to_string()])
             .output();
@@ -757,7 +776,7 @@ fn setup_dns(dns: &str) -> Result<(), String> {
         .collect::<Vec<_>>()
         .join(",");
 
-    let ps = format!("Set-DnsClientServerAddress -InterfaceAlias 'usque' -ServerAddresses ({list})");
+    let ps = format!("Set-DnsClientServerAddress -InterfaceAlias '{}' -ServerAddresses ({list})", tunnel_iface().unwrap_or_else(|| "usque".into()));
 
     let output = cmd("powershell")
         .args(["-NoProfile", "-Command", &ps])
@@ -803,13 +822,13 @@ pub fn vpn_emergency_reset() -> Result<String, String> {
     done.push("маршруты туннеля сняты".into());
 
     let _ = cmd("powershell")
-        .args(["-NoProfile", "-Command", "Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -eq 'usque' } | Reset-DnsClientServerAddress -ErrorAction SilentlyContinue"])
+        .args(["-NoProfile", "-Command", &format!("Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ {} }} | Reset-DnsClientServerAddress -ErrorAction SilentlyContinue", tunnel_filter())])
         .output();
     let _ = cmd("ipconfig").arg("/flushdns").output();
     done.push("сброшены DNS и кэш резолвера".into());
 
     let left = cmd("powershell")
-        .args(["-NoProfile", "-Command", "$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -ne 'usque' }; if ($r) { 'ok' }"])
+        .args(["-NoProfile", "-Command", &format!("$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object {{ {} }}; if ($r) {{ 'ok' }}", format!("$_.InterfaceAlias -ne '{}'", tunnel_iface().unwrap_or_else(|| "usque".into())))])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("ok"))
         .unwrap_or(false);
