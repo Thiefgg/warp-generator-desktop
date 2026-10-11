@@ -3,7 +3,6 @@
 **Русский** | [English](README.md)
 
 !!! Может плохо работать с московскими интернет-провайдерами !!!
-В следующем обновлении я добавлю реле для обхода блокировки API Cloudflare на уровне интернет-провайдера.
 
 ![WARP Generator Desktop](.github/assets/screenshot-generator.png)
 
